@@ -327,4 +327,4 @@ tests/e2e.py          端到端拦截测试
 
 ## 许可证
 
-MIT OR Apache-2.0。
+MIT。全文见 [LICENSE](LICENSE)。

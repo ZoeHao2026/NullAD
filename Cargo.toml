@@ -14,9 +14,9 @@ members = [
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.96"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 authors = ["NullAD Contributors"]
-repository = "https://github.com/nullad/nullad"
+repository = "https://github.com/ZoeHao2026/NullAD"
 
 [workspace.dependencies]
 # --- internal ---
@@ -120,3 +120,15 @@ strip = "none"
 [profile.dev]
 opt-level = 0
 debug = 1
+
+# The MSVC C compiler on this machine fails with D8050 ("failed to get command
+# line into debug records") when asked to emit debug info for large C translation
+# units. The release profile strips symbols so it is unaffected; the debug and
+# test profiles are not. Rust code keeps its debug info — only the C dependency
+# loses it. See scripts/build.bat for the full diagnosis.
+[profile.dev.package.ring]
+debug = false
+
+[profile.test.package.ring]
+debug = false
+

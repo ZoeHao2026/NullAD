@@ -356,4 +356,4 @@ Stated plainly rather than left for a user to discover:
 
 ## Licence
 
-MIT OR Apache-2.0.
+MIT. See [LICENSE](LICENSE).
