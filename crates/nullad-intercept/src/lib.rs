@@ -18,6 +18,24 @@
 //! full HTTPS URL filtering requires certificate-inspecting interception,
 //! which is a different mechanism with a real security cost and is not part of
 //! the MVP.
+//!
+//! ## 中文说明
+//!
+//! 本层提供三种**彼此独立**的拦截机制，而非分层叠加的关系，
+//! 因为它们的能力边界与权限要求各不相同：
+//!
+//! | 模块 | 拦截范围 | 权限 |
+//! |---|---|---|
+//! | [`http_proxy`] | 明文 HTTP 的完整 URL 与路径 | 无需提权 |
+//! | [`sni`] | 按主机名拦截整条 TLS 连接 | 无需提权 |
+//! | [`dns`] | 域名，发生在任何连接建立之前 | 需要 53 端口 + 改系统解析器 |
+//!
+//! 关于 [`sni`] 需要特别说明：它读取的是 TLS ClientHello 中以明文发送的
+//! SNI 字段，因此**无法**看到 TLS 会话内部，也无法过滤加密后的 URL。
+//! 它对 ECH（加密客户端问候）同样无能为力——ECH 正越来越普遍地
+//! 把 SNI 整个隐藏起来。这不是需要掩盖的缺陷：要过滤完整 HTTPS URL，
+//! 必须做基于证书检视的中间人拦截，那是另一套机制，
+//! 伴随真实的安全代价，不在 MVP 范围内。
 
 #![forbid(unsafe_code)]
 #![warn(missing_debug_implementations)]

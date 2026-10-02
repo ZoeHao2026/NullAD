@@ -7,6 +7,15 @@
 //! Everything a user interface needs is expressed through [`AppState`] and
 //! [`AppHandle`]. A UI therefore never constructs sockets, reads the registry,
 //! or parses rules — which is what keeps the GUI replaceable.
+//!
+//! ## 中文说明
+//!
+//! 本 crate 是编排层：纯引擎、拦截器与平台适配在这里汇合。
+//! 它持有应用状态、配置文件，以及防护运行期间的生命周期。
+//!
+//! 界面所需的一切都通过 [`AppState`] 与 [`AppHandle`] 暴露。
+//! 因此 UI 永远不需要创建套接字、读取注册表或解析规则——
+//! 这正是 GUI 可被替换的原因。
 
 #![forbid(unsafe_code)]
 #![warn(missing_debug_implementations)]

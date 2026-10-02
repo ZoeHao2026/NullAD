@@ -1,5 +1,7 @@
 # NullAD
 
+**English** · [简体中文](README.zh-CN.md)
+
 A high-performance, cross-platform ad and tracker blocker written in Rust.
 
 NullAD filters at three independent layers — DNS, TLS connection setup, and
@@ -316,6 +318,22 @@ tests/e2e.py          end-to-end interception test
 `nullad-desktop` depends only on `nullad-api` and `nullad-core`. Replacing the
 web UI means rewriting `ui/` and the thin command bindings in
 `crates/nullad-desktop/src/commands.rs`, and touching no engine code.
+
+## Documentation languages
+
+The full documentation is available in two languages:
+
+- **English** — this file
+- **[简体中文](README.zh-CN.md)** — a complete Chinese translation
+
+The crate-level module documentation in `nullad-engine`, `nullad-intercept`,
+`nullad-host`, `nullad-core` and `nullad-cli` also carries a 中文说明 section
+summarising each layer's responsibilities, so the code is self-describing for a
+Chinese-speaking maintainer without a separate doc build.
+
+The `nullad-cli` help text and the GUI labels remain English; localising them
+would mean threading a locale through the CLI and the web UI, which is a
+UI-layer task rather than an engine one.
 
 ---
 

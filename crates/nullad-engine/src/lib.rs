@@ -10,21 +10,25 @@
 //! That constraint is what makes NullAD's core reusable across the desktop GUI,
 //! the headless CLI, and a future Android/iOS FFI binding without modification.
 //!
-//! ## Matching model
+//! ## 中文说明
 //!
-//! A request is reduced to a [`Request`] (URL, host, resource type, and the
-//! originating page domain). The engine then evaluates it against a
-//! [`RuleSet`] using three specialised indexes, chosen per rule shape so that
-//! cost scales with the *request*, not with the number of rules:
+//! 本 crate 是 NullAD 的规则解析与请求匹配核心，**不依赖任何异步运行时、
+//! 套接字、文件系统或平台 API**。它的一切行为都是 `&self` 加一个输入请求的
+//! 纯函数。正是这个约束，让内核可以不加改动地复用于桌面 GUI、无界面 CLI，
+//! 以及未来的 Android/iOS FFI 绑定。
 //!
-//! | Index | Rule shape | Cost |
+//! 匹配模型：请求被归约为 [`Request`]（URL、主机名、资源类型、来源页面域名），
+//! 再交给 [`RuleSet`] 评估。规则按其形态被分派到三套专用索引，
+//! 因此开销取决于**请求**本身，而与规则条数无关：
+//!
+//! | 索引 | 规则形态 | 开销 |
 //! |---|---|---|
-//! | [`DomainTrie`] | `\|\|domain^` anchors | O(labels) |
-//! | [`SubstringIndex`] | `*` wildcard / literal fragments | O(url) via Aho–Corasick |
-//! | [`RegexIndex`] | `/regex/` and option-heavy rules | O(url), bucket only |
+//! | [`DomainTrie`] | `\|\|domain^` 锚点 | O(标签数) |
+//! | [`SubstringIndex`] | `*` 通配 / 字面片段 | O(URL)，经 Aho–Corasick |
+//! | [`RegexIndex`] | `/regex/` 及选项复杂的规则 | O(URL)，仅限正则桶 |
 //!
-//! Exception rules (`@@`) are evaluated **first** and short-circuit, matching
-//! Adblock Plus semantics where a whitelist always wins.
+//! 例外规则（`@@`）**最先**评估并短路返回，符合 Adblock Plus 中
+//! 「白名单永远优先」的语义。
 //!
 //! ## Example
 //!

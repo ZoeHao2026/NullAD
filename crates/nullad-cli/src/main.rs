@@ -8,6 +8,16 @@
 //! Argument parsing is hand-rolled rather than delegated to a CLI framework
 //! because this host's registry cache does not contain one, and the surface is
 //! small enough that a dependency would not pay for itself.
+//!
+//! ## 中文说明
+//!
+//! 本二进制是项目的**主要度量与自用（dogfooding）入口**。
+//! NullAD 对外宣称的每一个性能数字都可以用 `nullad-cli bench` 复现；
+//! 整套拦截链路也可以用 `nullad-cli serve` 端到端跑通，
+//! 完全不需要拉起桌面 GUI。
+//!
+//! 参数解析是手写的，没有交给 CLI 框架：本机的 registry 缓存里没有这类库，
+//! 而这个命令行接口足够小，引入依赖并不划算。
 
 use std::path::PathBuf;
 use std::process::ExitCode;

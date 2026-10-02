@@ -21,6 +21,28 @@
 //! System proxy changes are per-user on Windows and need no elevation. DNS
 //! changes and binding port 53 require elevation on every platform, so they are
 //! opt-in and reported honestly when unavailable.
+//!
+//! ## 中文说明
+//!
+//! 所有需要接触操作系统的代码都集中在这里，别处没有任何平台相关代码。
+//! 把平台代码收进单个 crate，正是引擎得以保持纯粹、
+//! 拦截层得以保持可移植的原因。
+//!
+//! **变更日志（change journaling）**
+//!
+//! NullAD 会修改系统级设置（HTTP 代理，以及可选的 DNS 解析器）。
+//! 如果进程在「已应用」与「已还原」之间崩溃，用户的机器就会指向一个
+//! 已经不再运行的代理——这是一种极其恶劣的失效模式。
+//!
+//! 因此每一项变更都会**先写入** [`journal`] 再应用，且只在成功还原之后才被清除。
+//! 启动时 [`journal::ChangeJournal::pending`] 会报告所有遗留项，
+//! 让用户能把系统精确还原成原样。
+//!
+//! **权限**
+//!
+//! Windows 上的系统代理是每用户设置，无需提权。
+//! 而 DNS 变更与绑定 53 端口在所有平台都需要提权，
+//! 因此它们是选择性开启的，并且在不可用时如实汇报。
 
 // `deny` rather than `forbid`: the Windows backend needs exactly one `unsafe`
 // call to `InternetSetOptionW`, which has no safe wrapper in this dependency
