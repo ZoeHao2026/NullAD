@@ -4,6 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>NullAD</title>
+    <!-- Blocking, and before the stylesheet: the stored theme must reach <html>
+         before the first paint. The app's CSP refuses inline script, so this
+         cannot live here directly. -->
+    <script src="theme.js"></script>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -32,17 +36,17 @@
         </div>
 
         <nav class="nav" id="nav">
-          <button class="nav-item is-active" data-view="dashboard">
-            <span class="nav-glyph">◧</span> Dashboard
+          <button class="nav-item is-active" data-view="dashboard" type="button">
+            <span class="nav-glyph">01</span><span class="nav-label">Dashboard</span>
           </button>
-          <button class="nav-item" data-view="rules">
-            <span class="nav-glyph">≡</span> Rules
+          <button class="nav-item" data-view="rules" type="button">
+            <span class="nav-glyph">02</span><span class="nav-label">Rules</span>
           </button>
-          <button class="nav-item" data-view="settings">
-            <span class="nav-glyph">⚙</span> Settings
+          <button class="nav-item" data-view="settings" type="button">
+            <span class="nav-glyph">03</span><span class="nav-label">Settings</span>
           </button>
-          <button class="nav-item" data-view="logs">
-            <span class="nav-glyph">▤</span> Logs
+          <button class="nav-item" data-view="logs" type="button">
+            <span class="nav-glyph">04</span><span class="nav-label">Logs</span>
           </button>
         </nav>
 
@@ -51,8 +55,18 @@
             <span class="dot" id="state-dot"></span>
             <span id="state-label">Stopped</span>
           </div>
-          <button class="btn btn-primary btn-block" id="toggle-protection">Start protection</button>
+          <button class="btn btn-primary btn-block" id="toggle-protection" type="button">
+            Start protection
+          </button>
           <div class="rule-count" id="rule-count">— rules</div>
+          <div class="theme-switch" id="theme-switch" role="group" aria-label="Colour theme">
+            <button class="theme-option is-active" id="theme-light" type="button" aria-pressed="true">
+              Light
+            </button>
+            <button class="theme-option" id="theme-dark" type="button" aria-pressed="false">
+              Dark
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -60,6 +74,7 @@
         <!-- Dashboard -->
         <section class="view is-active" id="view-dashboard">
           <header class="view-head">
+            <span class="view-index">01</span>
             <h1>Dashboard</h1>
             <p class="muted">Live filtering activity from every interceptor.</p>
           </header>
@@ -140,6 +155,7 @@
         <!-- Rules -->
         <section class="view" id="view-rules">
           <header class="view-head">
+            <span class="view-index">02</span>
             <h1>Rules</h1>
             <p class="muted">Filter lists and custom rules.</p>
           </header>
@@ -213,6 +229,7 @@
         <!-- Settings -->
         <section class="view" id="view-settings">
           <header class="view-head">
+            <span class="view-index">03</span>
             <h1>Settings</h1>
             <p class="muted">Listeners, system integration, and diagnostics.</p>
           </header>
@@ -280,6 +297,7 @@
         <!-- Logs -->
         <section class="view" id="view-logs">
           <header class="view-head">
+            <span class="view-index">04</span>
             <h1>Logs</h1>
             <p class="muted">Every decision, newest first.</p>
           </header>

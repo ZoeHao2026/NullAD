@@ -1,28 +1,80 @@
-/* NullAD desktop UI.
+/* NullAD desktop UI — Swiss / International Typographic Style.
  *
  * No CSS framework is used on purpose: this host's npm registry is unreachable,
  * so a build step would be impossible to reproduce. The design tokens below keep
  * the styling consistent without one, and because the UI talks only to the
  * nullad-core command surface, adopting a framework later is a UI-only change.
+ *
+ * The system, in four rules:
+ *
+ *   1. One grotesque family, flush left and ragged right. Hierarchy comes from
+ *      scale and weight, never from a second typeface.
+ *   2. The grid is drawn, not implied. Sections, rows and figures are separated
+ *      by 1px rules; there are no boxes, no radii, no shadows, no gradients.
+ *   3. Paper, ink, and exactly one red. Every "danger" signal reuses the accent
+ *      so the palette cannot drift.
+ *   4. Uppercase, letter-spaced micro-labels sit against oversized tabular
+ *      figures. That contrast is the whole look.
+ *
+ * Two themes live here. Light is the default and is the canonical one; the dark
+ * variant keeps the same geometry with inverted ink. `ui/theme.js` puts
+ * `data-theme` on <html> before the first paint; it must stay a separate file
+ * because the app's CSP allows no inline script.
+ *
+ * `--warn` is part of the public surface: ui/app.js renders an inline
+ * `style="color:var(--warn)"`, so that token must exist in both themes.
  */
 
+/* ---------------------------------------------------------------- tokens */
+
 :root {
-  --bg: #0d1017;
-  --bg-panel: #151a24;
-  --bg-elevated: #1c2230;
-  --border: #262e3d;
-  --border-soft: #1f2532;
-  --text: #e6ebf4;
-  --text-muted: #8b97ab;
-  --brand: #387afd;
-  --brand-soft: #23304d;
-  --danger: #ff5c5c;
-  --success: #35d07f;
-  --warn: #ffb454;
-  --radius: 10px;
-  --radius-sm: 6px;
+  color-scheme: light;
+
+  --paper: #f3f3f0;
+  --field: #ffffff;
+
+  --ink: #111110;
+  --ink-2: #3a3a37;
+  --ink-3: #6b6b66;
+
+  --rule: #111110;
+  --rule-soft: #d5d5cf;
+
+  --accent: #d50512;
+  --accent-ink: #ffffff;
+
+  --ok: #0a6b3d;
+  --warn: #9a6200;
+
+  --sel: rgba(17, 17, 16, 0.05);
+
+  --sans: "Helvetica Neue", Helvetica, Arial, "Segoe UI", system-ui, sans-serif;
   --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
 }
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --paper: #121211;
+  --field: #1a1a19;
+
+  --ink: #f4f4f1;
+  --ink-2: #d0d0cb;
+  --ink-3: #9a9a94;
+
+  --rule: #f4f4f1;
+  --rule-soft: #333331;
+
+  --accent: #ff2e3a;
+  --accent-ink: #121211;
+
+  --ok: #4fd08a;
+  --warn: #f0b429;
+
+  --sel: rgba(244, 244, 241, 0.05);
+}
+
+/* ------------------------------------------------------------------ base */
 
 * {
   box-sizing: border-box;
@@ -34,144 +86,56 @@ body {
   height: 100%;
 }
 
+html {
+  background: var(--paper);
+}
+
 body {
-  background: var(--bg);
-  color: var(--text);
-  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font: 13px/1.45 var(--sans);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
 
+::selection {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
+  border-radius: 0;
+  width: 14px;
+  height: 14px;
+}
+
+/* ----------------------------------------------------------------- shell */
+
 .app {
   display: grid;
-  grid-template-columns: 232px 1fr;
+  grid-template-columns: 216px 1fr;
   height: 100vh;
+  background: var(--paper);
 }
-
-/* ---------------------------------------------------------------- sidebar */
 
 .sidebar {
-  background: var(--bg-panel);
-  border-right: 1px solid var(--border);
+  background: var(--paper);
+  border-right: 1px solid var(--rule);
   display: flex;
   flex-direction: column;
-  padding: 18px 14px;
-  gap: 22px;
+  padding: 26px 20px 22px;
+  gap: 30px;
 }
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 4px;
-}
-
-.brand-mark {
-  width: 30px;
-  height: 30px;
-  color: var(--brand);
-  flex: none;
-}
-
-.brand-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.2;
-}
-
-.brand-name {
-  font-weight: 650;
-  letter-spacing: 0.2px;
-}
-
-.brand-sub {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.nav {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 11px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-muted);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.nav-item:hover {
-  background: var(--bg-elevated);
-  color: var(--text);
-}
-
-.nav-item.is-active {
-  background: var(--brand-soft);
-  color: var(--text);
-}
-
-.nav-glyph {
-  width: 16px;
-  text-align: center;
-  opacity: 0.85;
-}
-
-.sidebar-foot {
-  margin-top: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.state-pill {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  flex: none;
-}
-
-.dot.is-running {
-  background: var(--success);
-  box-shadow: 0 0 0 3px rgba(53, 208, 127, 0.15);
-}
-
-.dot.is-degraded {
-  background: var(--warn);
-}
-
-.dot.is-failed {
-  background: var(--danger);
-}
-
-.rule-count {
-  font-size: 12px;
-  color: var(--text-muted);
-  text-align: center;
-}
-
-/* ------------------------------------------------------------------- main */
 
 .main {
   overflow-y: auto;
-  padding: 26px 30px 40px;
+  padding: 34px 44px 76px;
 }
 
 .view {
@@ -180,100 +144,319 @@ body {
 
 .view.is-active {
   display: block;
+  max-width: 1120px;
 }
 
+/* --------------------------------------------------------------- sidebar */
+
+.brand {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 0;
+}
+
+.brand-mark {
+  width: 26px;
+  height: 26px;
+  color: var(--accent);
+  flex: none;
+  margin-top: 2px;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+}
+
+.brand-name {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.brand-sub {
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-top: 4px;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.nav-item {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  align-items: baseline;
+  column-gap: 6px;
+
+  padding: 10px 8px 10px 9px;
+  border: 0;
+  border-bottom: 1px solid var(--rule-soft);
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nav-item:hover {
+  background: var(--sel);
+  color: var(--ink);
+}
+
+.nav-item.is-active {
+  border-left-color: var(--accent);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.nav-glyph {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+}
+
+.nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-item.is-active .nav-glyph {
+  color: var(--accent);
+}
+
+.sidebar-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border-top: 1px solid var(--rule);
+  padding-top: 18px;
+}
+
+.state-pill {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 0;
+  background: transparent;
+  border: 1px solid var(--ink-3);
+  flex: none;
+}
+
+.dot.is-running {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.dot.is-degraded {
+  background: var(--warn);
+  border-color: var(--warn);
+}
+
+.dot.is-failed {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.rule-count {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A square two-up switch, in the same grammar as the rest of the chrome. */
+.theme-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--rule);
+}
+
+.theme-option {
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 7px 0;
+  cursor: pointer;
+}
+
+.theme-option + .theme-option {
+  border-left: 1px solid var(--rule);
+}
+
+.theme-option:hover {
+  color: var(--ink);
+}
+
+.theme-option.is-active {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* ------------------------------------------------------------------- view */
+
 .view-head {
-  margin-bottom: 20px;
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  align-items: start;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 16px;
+  margin-bottom: 30px;
+}
+
+.view-index {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  padding-top: 10px;
 }
 
 .view-head h1 {
+  grid-column: 2;
   margin: 0;
-  font-size: 21px;
-  font-weight: 600;
+  font-size: clamp(28px, 3.2vw, 40px);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.02;
+}
+
+.view-head .muted {
+  grid-column: 2;
+  margin: 9px 0 0;
+  max-width: 62ch;
+  font-size: 13px;
+  color: var(--ink-3);
 }
 
 .muted {
-  color: var(--text-muted);
-  margin: 4px 0 0;
+  color: var(--ink-3);
 }
 
 .sm {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 /* ------------------------------------------------------------------ cards */
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 14px;
-  margin-bottom: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0 28px;
+  margin-bottom: 38px;
 }
 
+/* The rule sits on top of the card, absolutely positioned, so a 1px hairline
+ * and the 3px accent bar never shift the figures beneath them. */
 .card {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 15px 16px;
+  position: relative;
+  background: transparent;
+  border: 0;
+  padding: 22px 0 0;
 }
 
-.card-accent {
-  border-color: #2c4472;
-  background: linear-gradient(180deg, #182236 0%, var(--bg-panel) 100%);
+.card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--rule);
+}
+
+.card-accent::before {
+  height: 3px;
+  background: var(--accent);
 }
 
 .card-label {
-  font-size: 12px;
-  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  color: var(--ink-3);
 }
 
 .card-value {
-  font-size: 27px;
-  font-weight: 640;
-  margin-top: 6px;
+  font-size: clamp(30px, 3.4vw, 42px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  margin-top: 12px;
   font-variant-numeric: tabular-nums;
 }
 
 .card-value-red {
-  color: var(--danger);
+  color: var(--accent);
 }
 
 .card-foot {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-top: 9px;
 }
 
 /* ----------------------------------------------------------------- panels */
 
 .grid-2 {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 14px;
-  margin-bottom: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 0 40px;
 }
 
 .panel {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px 18px;
-  margin-bottom: 14px;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--rule);
+  padding: 22px 0 28px;
 }
 
 .panel h2 {
-  margin: 0 0 12px;
-  font-size: 14px;
-  font-weight: 600;
+  margin: 0 0 16px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }
 
 .panel-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
 .panel-head h2 {
@@ -285,23 +468,23 @@ body {
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .table th {
   text-align: left;
-  font-weight: 500;
-  color: var(--text-muted);
-  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-3);
+  font-size: 10px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
+  padding: 0 10px 9px 0;
+  border-bottom: 1px solid var(--rule);
 }
 
 .table td {
-  padding: 7px 8px;
-  border-bottom: 1px solid var(--border-soft);
+  padding: 9px 10px 9px 0;
+  border-bottom: 1px solid var(--rule-soft);
 }
 
 .table tr:last-child td {
@@ -312,49 +495,68 @@ body {
   text-align: right;
   font-variant-numeric: tabular-nums;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 11.5px;
 }
 
-.ab-path {
-  font-size: 11px !important;
+/* Widen the gutter after a numeric column. Padding on the right of a numeric
+ * cell is still zero, so right-aligned figures stay flush with the grid edge. */
+.table .num + td,
+.table .num + th {
+  padding-left: 14px;
+}
+
+/* Declared after `.num` so equal specificity resolves to the smaller size. */
+.table .ab-path {
+  font-size: 11px;
   word-break: break-all;
 }
 
 .empty {
-  padding: 22px 8px;
+  padding: 30px 8px;
   text-align: center;
-  color: var(--text-muted);
-  font-size: 13px;
+  color: var(--ink-3);
+  font: 12px/1.45 var(--sans);
+  letter-spacing: 0.04em;
 }
 
 /* ------------------------------------------------------------------ feeds */
 
 .feed {
-  max-height: 260px;
+  max-height: 300px;
   overflow-y: auto;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 11.5px;
 }
 
 .feed-tall {
-  max-height: 420px;
+  max-height: 460px;
 }
 
 .feed-row {
   display: grid;
-  grid-template-columns: 74px 1fr auto;
-  gap: 10px;
-  padding: 4px 6px;
-  border-radius: 4px;
+  grid-template-columns: 78px 1fr auto;
+  gap: 12px;
   align-items: baseline;
+  padding: 6px 8px 6px 9px;
+  border-bottom: 1px solid var(--rule-soft);
+  border-left: 2px solid transparent;
 }
 
-.feed-row:nth-child(odd) {
-  background: rgba(255, 255, 255, 0.015);
+.feed-row.is-blocked {
+  border-left-color: var(--accent);
+}
+
+.feed-row.is-allowed {
+  border-left-color: var(--rule-soft);
+}
+
+.feed-row:hover {
+  background: var(--sel);
 }
 
 .feed-time {
-  color: var(--text-muted);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
 }
 
 .feed-host {
@@ -364,59 +566,75 @@ body {
 }
 
 .feed-row.is-blocked .feed-host {
-  color: var(--danger);
+  color: var(--accent);
 }
 
 .feed-row.is-allowed .feed-host {
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .feed-tag {
   font-size: 10px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  color: var(--text-muted);
+  color: var(--ink-3);
+  border: 0;
+  padding: 0;
 }
 
 .feed-tag.is-blocked {
-  color: var(--danger);
-  border-color: rgba(255, 92, 92, 0.4);
+  color: var(--accent);
+  font-weight: 700;
 }
 
 /* --------------------------------------------------------------- controls */
 
+/* `.btn-primary` must stay above `.btn-ghost`: app.js toggles the two classes
+ * on one button, and equal specificity means source order decides. */
 .btn {
-  border: 1px solid var(--border);
-  background: var(--bg-elevated);
-  color: var(--text);
-  border-radius: var(--radius-sm);
-  padding: 7px 13px;
+  border: 1px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  border-radius: 0;
+  padding: 8px 14px;
   font: inherit;
-  font-size: 13px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
 .btn:hover {
-  border-color: #38455c;
+  background: var(--ink);
+  color: var(--paper);
 }
 
 .btn:disabled {
-  opacity: 0.5;
+  opacity: 0.38;
   cursor: default;
 }
 
+.btn:disabled:hover {
+  background: transparent;
+  color: var(--ink);
+}
+
 .btn-primary {
-  background: var(--brand);
-  border-color: var(--brand);
-  color: #fff;
-  font-weight: 520;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .btn-primary:hover {
-  background: #4a88ff;
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.btn-primary:disabled:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 
 .btn-ghost {
@@ -424,8 +642,8 @@ body {
 }
 
 .btn-sm {
-  padding: 4px 10px;
-  font-size: 12px;
+  padding: 5px 10px;
+  font-size: 10px;
 }
 
 .btn-block {
@@ -434,20 +652,26 @@ body {
 
 .input,
 .textarea {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  padding: 7px 10px;
+  background: var(--field);
+  border: 1px solid var(--rule-soft);
+  border-radius: 0;
+  color: var(--ink);
+  padding: 8px 10px;
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   min-width: 0;
 }
 
 .input:focus,
 .textarea:focus {
   outline: none;
-  border-color: var(--brand);
+  border-color: var(--ink);
+}
+
+.input:focus-visible,
+.textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .input-xs {
@@ -474,32 +698,34 @@ body {
 }
 
 .field {
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .field > label {
   display: block;
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 8px;
 }
 
 .inline,
 .inline-block {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 13px;
+  gap: 8px;
+  font-size: 12.5px;
 }
 
 .inline-block {
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .hint {
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--text-muted);
+  margin-top: 12px;
+  font-size: 11.5px;
+  color: var(--ink-3);
   white-space: pre-wrap;
 }
 
@@ -508,40 +734,47 @@ body {
 }
 
 .hint.is-ok {
-  color: var(--success);
+  color: var(--ok);
+}
+
+/* A hint that states outstanding work is followed by the button that clears it;
+ * the rule above alone leaves the pair touching. */
+.hint + .btn {
+  margin-top: 14px;
 }
 
 .check-result {
-  margin-top: 12px;
-  font-size: 13px;
+  margin-top: 16px;
+  font-size: 12.5px;
 }
 
 .verdict {
   display: inline-block;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.4px;
+  padding: 2px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .verdict.is-blocked {
-  background: rgba(255, 92, 92, 0.15);
-  color: var(--danger);
-  border: 1px solid rgba(255, 92, 92, 0.35);
+  color: var(--accent);
+  border-bottom: 3px solid var(--accent);
 }
 
 .verdict.is-allowed {
-  background: rgba(53, 208, 127, 0.13);
-  color: var(--success);
-  border: 1px solid rgba(53, 208, 127, 0.32);
+  color: var(--ok);
+  border-bottom: 3px solid var(--ok);
 }
 
 .rule-line {
-  margin-top: 8px;
+  margin-top: 10px;
   font-family: var(--mono);
-  font-size: 12px;
-  color: var(--text-muted);
+  font-size: 11.5px;
+  color: var(--ink-3);
   word-break: break-all;
 }
 
@@ -553,24 +786,25 @@ body {
 
 .toasts {
   position: fixed;
-  right: 18px;
-  bottom: 18px;
+  right: 24px;
+  bottom: 24px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   z-index: 50;
-  max-width: 400px;
+  max-width: 420px;
 }
 
 .toast {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--brand);
-  border-radius: var(--radius-sm);
-  padding: 10px 13px;
-  font-size: 13px;
-  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
-  animation: toast-in 0.16s ease-out;
+  background: var(--ink);
+  color: var(--paper);
+  border: 0;
+  border-left: 4px solid var(--accent);
+  border-radius: 0;
+  padding: 12px 16px;
+  font-size: 12px;
+  box-shadow: none;
+  animation: toast-in 0.12s linear;
 }
 
 .toast.is-warn {
@@ -578,36 +812,49 @@ body {
 }
 
 .toast.is-error {
-  border-left-color: var(--danger);
+  border-left-color: var(--accent);
 }
 
 .toast.is-ok {
-  border-left-color: var(--success);
+  border-left-color: var(--ok);
 }
 
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
   }
   to {
     opacity: 1;
-    transform: none;
   }
 }
 
-/* Scrollbars: subtle, so they do not compete with the content. */
+/* ------------------------------------------------------------ small print */
+
+@media (max-width: 980px) {
+  .main {
+    padding: 28px 28px 64px;
+  }
+}
+
+/* Square, and tinted from the same tokens, so both themes stay consistent. */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2b3446;
-  border-radius: 6px;
-  border: 3px solid var(--bg);
+  background: var(--rule-soft);
+  border-radius: 0;
+  border: 3px solid var(--paper);
 }
 
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
 }
