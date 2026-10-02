@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "NullAD",
+  "version": "0.1.0",
+  "identifier": "dev.nullad.desktop",
+  "build": {
+    "frontendDist": "../../ui"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "NullAD",
+        "width": 1040,
+        "height": 720,
+        "minWidth": 840,
+        "minHeight": 560,
+        "resizable": true,
+        "center": true,
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src ipc: http://ipc.localhost"
+    },
+    "trayIcon": {
+      "id": "main-tray",
+      "iconPath": "icons/tray.png",
+      "iconAsTemplate": false,
+      "tooltip": "NullAD"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../../lists/*.txt": "lists/"
+    },
+    "shortDescription": "High-performance cross-platform ad blocker",
+    "longDescription": "NullAD filters advertising and tracking at the DNS, connection and HTTP layers, driven by a pure-Rust rule engine with lock-free hot reloading."
+  }
+}

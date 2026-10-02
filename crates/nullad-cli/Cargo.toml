@@ -1,0 +1,27 @@
+[package]
+name = "nullad-cli"
+description = "NullAD headless command line interface: check, load, bench, serve, dns, status."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "nullad-cli"
+path = "src/main.rs"
+
+[dependencies]
+nullad-engine.workspace = true
+nullad-api.workspace = true
+nullad-intercept.workspace = true
+nullad-host.workspace = true
+nullad-core.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+serde_json.workspace = true
+time.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true

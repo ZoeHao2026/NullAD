@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NullAD</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+            <path
+              d="M16 2.5 27 5.6v11.9c0 6.9-4.6 11.6-11 14-6.4-2.4-11-7.1-11-14V5.6z"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M11.4 11.4 20.6 20.6M20.6 11.4 11.4 20.6"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+            />
+          </svg>
+          <div class="brand-text">
+            <span class="brand-name">NullAD</span>
+            <span class="brand-sub">Ad &amp; tracker blocking</span>
+          </div>
+        </div>
+
+        <nav class="nav" id="nav">
+          <button class="nav-item is-active" data-view="dashboard">
+            <span class="nav-glyph">◧</span> Dashboard
+          </button>
+          <button class="nav-item" data-view="rules">
+            <span class="nav-glyph">≡</span> Rules
+          </button>
+          <button class="nav-item" data-view="settings">
+            <span class="nav-glyph">⚙</span> Settings
+          </button>
+          <button class="nav-item" data-view="logs">
+            <span class="nav-glyph">▤</span> Logs
+          </button>
+        </nav>
+
+        <div class="sidebar-foot">
+          <div class="state-pill" id="state-pill">
+            <span class="dot" id="state-dot"></span>
+            <span id="state-label">Stopped</span>
+          </div>
+          <button class="btn btn-primary btn-block" id="toggle-protection">Start protection</button>
+          <div class="rule-count" id="rule-count">— rules</div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <!-- Dashboard -->
+        <section class="view is-active" id="view-dashboard">
+          <header class="view-head">
+            <h1>Dashboard</h1>
+            <p class="muted">Live filtering activity from every interceptor.</p>
+          </header>
+
+          <div class="cards">
+            <div class="card card-accent">
+              <div class="card-label">Requests seen</div>
+              <div class="card-value" id="stat-queries">0</div>
+              <div class="card-foot" id="stat-queries-foot">engine lookups</div>
+            </div>
+            <div class="card">
+              <div class="card-label">Blocked</div>
+              <div class="card-value card-value-red" id="stat-blocked">0</div>
+              <div class="card-foot" id="stat-ratio">0.0% of traffic</div>
+            </div>
+            <div class="card">
+              <div class="card-label">Allowed</div>
+              <div class="card-value" id="stat-allowed">0</div>
+              <div class="card-foot" id="stat-exceptions">0 by exception</div>
+            </div>
+            <div class="card">
+              <div class="card-label">Rules loaded</div>
+              <div class="card-value" id="stat-rules">0</div>
+              <div class="card-foot" id="stat-lists">0 lists</div>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="panel">
+              <h2>Interceptors</h2>
+              <table class="table" id="interceptor-table">
+                <tbody>
+                  <tr>
+                    <td>HTTP proxy</td>
+                    <td class="num" id="ic-proxy">0 / 0</td>
+                    <td class="muted sm">blocked / seen</td>
+                  </tr>
+                  <tr>
+                    <td>TLS SNI</td>
+                    <td class="num" id="ic-sni">0 / 0</td>
+                    <td class="muted sm">blocked / seen</td>
+                  </tr>
+                  <tr>
+                    <td>DNS sinkhole</td>
+                    <td class="num" id="ic-dns">0 / 0</td>
+                    <td class="muted sm">blocked / seen</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="panel">
+              <h2>Rule set</h2>
+              <table class="table">
+                <tbody>
+                  <tr><td>Domain anchors</td><td class="num" id="rs-domain">0</td></tr>
+                  <tr><td>Domain + path</td><td class="num" id="rs-domainpath">0</td></tr>
+                  <tr><td>Substring / wildcard</td><td class="num" id="rs-fragment">0</td></tr>
+                  <tr><td>Regex</td><td class="num" id="rs-regex">0</td></tr>
+                  <tr><td>Trie nodes</td><td class="num" id="rs-trie">0</td></tr>
+                  <tr><td>Automaton fragments</td><td class="num" id="rs-frag">0</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Live requests</h2>
+              <button class="btn btn-ghost btn-sm" id="clear-log">Clear</button>
+            </div>
+            <div class="feed" id="feed">
+              <div class="empty">No requests yet. Start protection to see activity.</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Rules -->
+        <section class="view" id="view-rules">
+          <header class="view-head">
+            <h1>Rules</h1>
+            <p class="muted">Filter lists and custom rules.</p>
+          </header>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Filter lists</h2>
+              <button class="btn btn-ghost btn-sm" id="reload-lists">Reload</button>
+            </div>
+            <table class="table table-full">
+              <thead>
+                <tr>
+                  <th>On</th>
+                  <th>Name</th>
+                  <th>Source</th>
+                  <th class="num">Rules</th>
+                  <th class="num">Failed</th>
+                  <th class="num">Cosmetic</th>
+                </tr>
+              </thead>
+              <tbody id="lists-body">
+                <tr><td colspan="6" class="empty">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Custom rules</h2>
+              <button class="btn btn-ghost btn-sm" id="save-custom">Apply</button>
+            </div>
+            <p class="muted sm">
+              One rule per line, in Adblock Plus syntax. These are parsed exactly
+              like a filter list.
+            </p>
+            <textarea id="custom-rules" class="textarea" spellcheck="false"
+              placeholder="||ads.example.com^&#10;@@||ads.example.com/needed.js$script&#10;/banner.gif"></textarea>
+            <div class="hint" id="custom-status"></div>
+          </div>
+
+          <div class="panel">
+            <h2>Check a URL</h2>
+            <div class="row">
+              <input id="check-url" class="input" placeholder="https://ads.example.com/banner.gif" />
+              <input id="check-page" class="input input-sm" placeholder="page (optional)" />
+              <select id="check-type" class="input input-sm">
+                <option value="other">other</option>
+                <option value="document">document</option>
+                <option value="script">script</option>
+                <option value="image">image</option>
+                <option value="stylesheet">stylesheet</option>
+                <option value="xhr">xhr</option>
+                <option value="subdocument">subdocument</option>
+                <option value="font">font</option>
+                <option value="media">media</option>
+              </select>
+              <button class="btn btn-primary" id="do-check">Check</button>
+            </div>
+            <div class="check-result" id="check-result"></div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Parsed rules</h2>
+              <span class="muted sm" id="rule-viewer-note"></span>
+            </div>
+            <div class="feed feed-tall" id="rule-viewer"></div>
+          </div>
+        </section>
+
+        <!-- Settings -->
+        <section class="view" id="view-settings">
+          <header class="view-head">
+            <h1>Settings</h1>
+            <p class="muted">Listeners, system integration, and diagnostics.</p>
+          </header>
+
+          <div class="panel">
+            <h2>Listeners</h2>
+            <div class="field">
+              <label for="set-proxy-enabled">HTTP proxy</label>
+              <div class="row">
+                <input type="checkbox" id="set-proxy-enabled" />
+                <input id="set-proxy-port" class="input input-xs" />
+                <span class="muted sm">needs no administrator rights</span>
+              </div>
+            </div>
+            <div class="field">
+              <label for="set-dns-enabled">DNS sinkhole</label>
+              <div class="row">
+                <input type="checkbox" id="set-dns-enabled" />
+                <input id="set-dns-port" class="input input-xs" />
+                <input id="set-dns-upstream" class="input input-sm" placeholder="8.8.8.8:53" />
+                <label class="inline"><input type="checkbox" id="set-dns-nxdomain" /> NXDOMAIN</label>
+              </div>
+              <div class="hint" id="dns-hint"></div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h2>System integration</h2>
+            <label class="inline-block">
+              <input type="checkbox" id="set-system-proxy" />
+              Route the operating system's proxy through NullAD while running
+            </label>
+            <p class="muted sm">
+              Every change is journaled before it is applied, so it can always be
+              undone — including after a crash.
+            </p>
+            <div class="hint" id="pending-changes"></div>
+            <button class="btn btn-ghost btn-sm" id="restore-system">Restore system settings</button>
+          </div>
+
+          <div class="panel">
+            <h2>Performance</h2>
+            <p class="muted sm">
+              Measures the real matching cost on this machine against the rules
+              currently loaded.
+            </p>
+            <button class="btn btn-ghost btn-sm" id="run-bench">Run benchmark</button>
+            <div class="hint" id="bench-result"></div>
+          </div>
+
+          <div class="panel">
+            <h2>About</h2>
+            <table class="table" id="about-table">
+              <tbody>
+                <tr><td>Platform</td><td class="num" id="ab-platform">—</td></tr>
+                <tr><td>Administrator</td><td class="num" id="ab-elevated">—</td></tr>
+                <tr><td>Rules loaded</td><td class="num" id="ab-rules">—</td></tr>
+                <tr><td>Data directory</td><td class="num ab-path" id="ab-data">—</td></tr>
+                <tr><td>Config directory</td><td class="num ab-path" id="ab-config">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Logs -->
+        <section class="view" id="view-logs">
+          <header class="view-head">
+            <h1>Logs</h1>
+            <p class="muted">Every decision, newest first.</p>
+          </header>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Decisions</h2>
+              <div class="row">
+                <select id="log-filter" class="input input-sm">
+                  <option value="all">All</option>
+                  <option value="blocked">Blocked only</option>
+                  <option value="allowed">Allowed only</option>
+                </select>
+                <button class="btn btn-ghost btn-sm" id="log-clear">Clear</button>
+              </div>
+            </div>
+            <div class="feed feed-tall" id="log-feed">
+              <div class="empty">Nothing logged yet.</div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toasts" id="toasts"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,28 @@
+[package]
+name = "nullad-engine"
+description = "NullAD filtering engine: pure, I/O-free ad-filter rule matching core."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+# This crate is deliberately dependency-light and free of any I/O, async runtime,
+# or platform API. That is what makes it reusable from a CLI, the desktop GUI,
+# or a future Android/iOS FFI binding without change.
+[dependencies]
+aho-corasick.workspace = true
+regex.workspace = true
+hashbrown.workspace = true
+foldhash.workspace = true
+smallvec.workspace = true
+arc-swap.workspace = true
+idna.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+# Used only by the property test that checks the regex length bound is a true
+# lower bound. Randomised search finds counterexamples that a fixed fixture
+# list would miss.
+rand.workspace = true
+rand_chacha.workspace = true

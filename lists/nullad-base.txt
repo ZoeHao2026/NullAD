@@ -1,0 +1,227 @@
+[Adblock Plus 2.0]
+! Title: NullAD Base Filter List
+! Description: Core advertising and third-party tracking rules shipped with NullAD.
+! Homepage: https://github.com/nullad/nullad
+! Licence: MIT
+!
+! This is a curated starter list, not a mirror of any third-party list. It
+! exists so that a fresh NullAD install blocks the most common advertising and
+! tracking endpoints immediately, and so that the engine has a realistic corpus
+! of every Adblock Plus syntax form to exercise. It is intentionally compact:
+! add a subscription list for broad coverage.
+!
+! ---------------------------------------------------------------------------
+! Section 1: domain anchors with separators (the most common real-world form)
+! ---------------------------------------------------------------------------
+||doubleclick.net^
+||googlesyndication.com^
+||googleadservices.com^
+||google-analytics.com^
+||googletagmanager.com^
+||googletagservices.com^
+||adservice.google.com^
+||pagead2.googlesyndication.com^
+||partner.googleadservices.com^
+||pubads.g.doubleclick.net^
+||securepubads.g.doubleclick.net^
+||tpc.googlesyndication.com^
+||adclick.g.doubleclick.net^
+||stats.g.doubleclick.net^
+
+||adnxs.com^
+||adsrvr.org^
+||rubiconproject.com^
+||pubmatic.com^
+||openx.net^
+||criteo.com^
+||criteo.net^
+||taboola.com^
+||outbrain.com^
+||revcontent.com^
+||mgid.com^
+||zedo.com^
+||adform.net^
+||smartadserver.com^
+||sharethrough.com^
+||teads.tv^
+||casalemedia.com^
+||indexexchange.com^
+||sovrn.com^
+||gumgum.com^
+||districtm.io^
+||triplelift.com^
+||bidswitch.net^
+||turn.com^
+||mathtag.com^
+||bluekai.com^
+||demdex.net^
+||everesttech.net^
+||omtrdc.net^
+||2o7.net^
+||adobedtm.com^
+
+||scorecardresearch.com^
+||quantserve.com^
+||quantcast.com^
+||comscore.com^
+||nielsen.com^
+||mixpanel.com^
+||segment.io^
+||segment.com^
+||amplitude.com^
+||heap.io^
+||hotjar.com^
+||fullstory.com^
+||mouseflow.com^
+||crazyegg.com^
+||clicktale.net^
+||kissmetrics.com^
+||chartbeat.com^
+||parsely.com^
+||newrelic.com^
+||bugsnag.com^
+||sentry.io^
+
+||branch.io^
+||adjust.com^
+||appsflyer.com^
+||kochava.com^
+||singular.net^
+||tune.com^
+||mparticle.com^
+||leanplum.com^
+
+||addthis.com^
+||sharethis.com^
+||disqus.com^
+||sumo.com^
+||getsitecontrol.com^
+||optinmonster.com^
+||privy.com^
+||justuno.com^
+
+||adroll.com^
+||perfectaudience.com^
+||retargeter.com^
+||bidr.io^
+||agkn.com^
+||crwdcntrl.net^
+||exelator.com^
+||rlcdn.com^
+||tapad.com^
+||thetradedesk.com^
+||adsymptotic.com^
+
+||liverail.com^
+||spotxchange.com^
+||spotx.tv^
+||yieldmo.com^
+||rhythmone.com^
+||conversantmedia.com^
+||media.net^
+||bidvertiser.com^
+||adblade.com^
+||chitika.com^
+
+! ---------------------------------------------------------------------------
+! Section 2: exceptions that must survive the block rules above
+! Tracker hosts that also serve first-party functionality a site cannot load
+! without. These exercise @@ exception semantics and must win over the blocks.
+! ---------------------------------------------------------------------------
+@@||googletagmanager.com/gtm.js$script,domain=example.com
+@@||googletagmanager.com/gtag/js$script
+@@||disqus.com/embed.js$script
+@@||sharethis.com/button.js$script
+@@||sentry.io/api/$domain=example.com
+
+! ---------------------------------------------------------------------------
+! Section 3: path fragments (substring index), with a length floor so that a
+! three-character token cannot cause broad collateral blocking.
+! ---------------------------------------------------------------------------
+/adserver/
+/adframe/
+/adframe.
+/adscript
+/advertisement.js
+/advertising.js
+/adsbygoogle.js
+/adsense/
+/adsync/
+/analytics.js
+/ga.js
+/gtag/js
+/pagead/
+/pixel.gif
+/pixel.png
+/pixel.php
+/beacon.gif
+/beacon.js
+/sponsored/
+/sponsored_content
+/promoted/
+/native-ad/
+/interstitial-ad/
+
+! ---------------------------------------------------------------------------
+! Section 4: option-restricted rules
+! ---------------------------------------------------------------------------
+||googletagmanager.com^$third-party
+||google-analytics.com^$third-party
+||hotjar.com^$third-party
+||fullstory.com^$third-party
+||scorecardresearch.com^$third-party
+||quantserve.com^$third-party
+||criteo.com^$third-party
+||criteo.net^$third-party
+||taboola.com^$third-party
+||outbrain.com^$third-party
+
+! Only block ad frames, so a site that legitimately embeds content is unaffected.
+||doubleclick.net^$subdocument
+||googlesyndication.com^$subdocument
+
+! Block ad scripts but never navigate away from a page.
+||adnxs.com^$script
+||adsrvr.org^$script
+||pubmatic.com^$script
+||rubiconproject.com^$script
+
+! Block tracking pixels and beacons only.
+||scorecardresearch.com^$image,ping
+||quantserve.com^$image,ping
+||omtrdc.net^$image,ping
+||2o7.net^$image,ping
+
+! Everything except scripts: used by lists that only object to passive tracking.
+||demdex.net^$~script
+||bluekai.com^$~script
+
+! ---------------------------------------------------------------------------
+! Section 5: domain-constrained rules
+! $domain= restricts a rule to specific initiators, which is how a list avoids
+! breaking the one site that depends on an otherwise-unwanted host.
+! ---------------------------------------------------------------------------
+||google-analytics.com^$domain=~example.com
+||hotjar.com^$domain=~example.com
+||criteo.com^$domain=~example.com
+
+! ---------------------------------------------------------------------------
+! Section 6: regex rules (linear-time regex crate only)
+! ---------------------------------------------------------------------------
+/^https?:\/\/[a-z0-9-]+\.doubleclick\.net\//
+/^https?:\/\/ads?\d*\./
+/banner\d*\.(gif|png|jpe?g)(\?|$)/
+/\/track(ing)?\?[^"]*(utm_|gclid=)/
+
+! ---------------------------------------------------------------------------
+! Section 7: wildcard patterns
+! ---------------------------------------------------------------------------
+||example-adserver.com/ad/*/banner*
+*/ads/*/300x250*
+*/pagead/js/adsbygoogle.js
+
+! ---------------------------------------------------------------------------
+! Section 8: URL-anchored rules
+! ---------------------------------------------------------------------------
+|http://ads.example.com/always-blocked
+|https://tracker.example.com/collect|

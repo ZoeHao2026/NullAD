@@ -1,0 +1,20 @@
+/target
+**/target
+*.pdb
+.DS_Store
+Thumbs.db
+*.log
+/logs/
+
+# Runtime state: change journals, caches, downloaded lists
+/state/
+/lists/cache/
+
+# Machine-local cargo home, seeded from the global registry cache.
+# Hundreds of megabytes of third-party crate sources; see .cargo/config.toml.
+/.cargo-home/
+
+# Local test artifacts
+/.webview-test/
+.desktop-stderr.txt
+.desktop-stdout.txt

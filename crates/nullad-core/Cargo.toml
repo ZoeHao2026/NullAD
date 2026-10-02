@@ -1,0 +1,28 @@
+[package]
+name = "nullad-core"
+description = "NullAD orchestration: wires the engine, interceptors and host adapters together."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+nullad-engine.workspace = true
+nullad-api.workspace = true
+nullad-intercept.workspace = true
+nullad-host.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+notify.workspace = true
+arc-swap.workspace = true
+dirs.workspace = true
+reqwest = { workspace = true, features = ["blocking"] }
+sha2.workspace = true

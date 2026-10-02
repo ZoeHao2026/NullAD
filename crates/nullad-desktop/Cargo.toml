@@ -1,0 +1,36 @@
+[package]
+name = "nullad-desktop"
+description = "NullAD desktop application (Tauri 2 shell over the engine)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+name = "nullad_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "nullad-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+# `tray-icon` is needed for the system tray; `image-png` so the tray icon can be
+# decoded from the bundled PNG rather than requiring a raw RGBA buffer.
+tauri = { workspace = true, features = ["tray-icon", "image-png"] }
+nullad-engine.workspace = true
+nullad-api.workspace = true
+nullad-core.workspace = true
+nullad-host.workspace = true
+nullad-intercept.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
+anyhow.workspace = true

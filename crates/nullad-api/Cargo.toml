@@ -1,0 +1,14 @@
+[package]
+name = "nullad-api"
+description = "NullAD shared API surface: DTOs and traits that decouple GUI from engine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+nullad-engine.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
