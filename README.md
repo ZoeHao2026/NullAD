@@ -35,15 +35,15 @@ headless CLI, and a future mobile FFI binding without modification.
 | `nullad-cli` | Complete — `check`, `load`, `bench`, `serve` |
 | `nullad-desktop` | Code complete and linking; **runtime unverified** (see below) |
 
-**The desktop GUI cannot be launched in this development sandbox.** The window
-subsystem is Tauri/WebView2, which starts a separate `msedgewebview2.exe` host
-process and communicates over named pipes. This sandbox blocks that, so Tauri
-fails during app setup with `Access is denied (os error 5)`. This was isolated
-to the environment rather than this codebase by building a Tauri app with an
-**empty setup closure** — it fails identically. A stock Tauri 2 application
-scaffold also builds and links correctly here, so the Rust side is sound; it
-simply cannot open a window under sandbox restrictions. Run
-`target/release/nullad-desktop.exe` outside the sandbox to exercise it.
+**The desktop GUI cannot be launched in the development sandbox in which NullAD
+was built.** The window subsystem is Tauri/WebView2, which starts a separate
+`msedgewebview2.exe` host process and communicates over named pipes; that
+sandbox blocks both, so Tauri fails during app setup with `Access is denied
+(os error 5)`. This was isolated to the environment rather than to this codebase
+by building a Tauri application with an **empty setup closure** — it fails
+identically. The Rust side builds and links correctly, so run
+`target/release/nullad-desktop.exe` outside a sandbox to exercise it.
+
 
 ---
 
@@ -122,16 +122,19 @@ removes an entire toolchain from the build.
 
 ### Important: this build is offline by design
 
-`.cargo/config.toml` sets `net.offline = true`. On this machine the Windows TLS
-stack is broken host-wide (`schannel: AcquireCredentialsHandle failed:
-SEC_E_NO_CREDENTIALS`), so crates.io is unreachable from `cargo`, `git`, and
-`curl`. Every dependency is resolved from a workspace-local registry cache in
-`.cargo-home/` (git-ignored, seeded from the machine's global cargo cache).
+`.cargo/config.toml` sets `net.offline = true`, so every dependency resolves from
+a workspace-local registry cache in `.cargo-home/` (git-ignored, seeded from the
+machine's global cargo cache). `Cargo.lock` is therefore authoritative and
+**must be committed**.
 
-`Cargo.lock` is therefore authoritative and **must be committed**. On a machine
-with working TLS, remove the `offline` line to fetch the normal way.
+This was not a stylistic preference. NullAD was written on a host whose Windows
+TLS stack was broken machine-wide (`schannel: AcquireCredentialsHandle failed:
+SEC_E_NO_CREDENTIALS`), which made crates.io unreachable from `cargo`, `git` and
+`curl` alike. Building without the network was the only way to build at all, and
+the result is a project that compiles from a cold cache with no network access.
+On a machine with working TLS, delete the `offline` line to fetch normally.
 
-Because of that constraint, four libraries that would normally be used are
+Because of that constraint, four libraries that would normally be used were
 absent from the registry cache and are implemented here instead:
 
 | Absent crate | What NullAD does instead |
@@ -140,6 +143,17 @@ absent from the registry cache and are implemented here instead:
 | `hickory-dns` | Own DNS message codec (parsing, name decompression, response building) |
 | `rcgen` | Not needed — TLS interception is out of MVP scope |
 | `criterion`, `insta`, `proptest` | Hand-rolled bench harness; `assert_eq!` golden tests; a `rand_chacha` property test |
+
+Two consequences are worth knowing about:
+
+- **Test data is not written to the system temp directory.** On a hardened or
+  sandboxed host that directory can be unwritable, so `nullad-core`'s loader
+  tests create their fixtures next to the running test binary instead, where
+  permissions are known good by construction.
+- **The engine is free of logging dependencies.** It writes one line to stderr
+  if it cannot start its reclaimer thread, rather than pulling `tracing` into a
+  crate that is meant to be embeddable anywhere.
+
 
 ---
 
@@ -316,8 +330,8 @@ Stated plainly rather than left for a user to discover:
 3. **Throughput is ~85% of target**, as measured above.
 4. **DNS needs elevation** to bind port 53 and repoint the resolver, so it is
    off by default and the rest of NullAD works without it.
-5. **The GUI is runtime-unverified** in this sandbox, for the reason given at the
-   top.
+5. **The GUI is runtime-unverified** because it was developed inside a sandbox
+   that blocks the WebView2 host process, for the reason given at the top.
 6. **No mobile binaries.** `nullad-engine` and `nullad-api` are written to
    compile for those targets, but no Android/iOS build exists yet.
 7. **Cosmetic filtering is parsed, not applied.** No element hiding.
