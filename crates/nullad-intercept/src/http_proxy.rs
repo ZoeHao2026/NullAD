@@ -20,14 +20,18 @@
 //! awkward through an abstraction that expects to normalise requests for you.
 
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::watch;
+use tokio::task::JoinSet;
 
 use nullad_engine::ResourceType;
 
+use crate::lifecycle::{stop_children, stopped};
+use crate::prefixed::PrefixedIo;
 use crate::{is_local_address, DecisionSource, EngineHandle};
 
 /// Maximum bytes of request head we will buffer.
@@ -36,6 +40,7 @@ const MAX_HEAD: usize = 64 * 1024;
 const HEAD_TIMEOUT: Duration = Duration::from_secs(15);
 /// Timeout for establishing an upstream connection.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_CONNECTIONS: usize = 256;
 
 /// Configuration for the HTTP proxy.
 #[derive(Debug, Clone)]
@@ -62,7 +67,7 @@ impl Default for ProxyConfig {
 #[derive(Debug)]
 enum HeadOutcome {
     /// A complete request was parsed.
-    Request(Box<ProxyRequest>),
+    Request(Box<ProxyRequest>, Vec<u8>),
     /// The connection produced something unusable; this response explains why.
     Reject(String),
     /// The client closed or timed out before completing a request.
@@ -115,13 +120,8 @@ impl ProxyRequest {
         if self.target.contains("://") {
             return nullad_engine::request::extract_host(&self.target);
         }
-        self.header("host").map(|h| {
-            h.split(':')
-                .next()
-                .unwrap_or(h)
-                .trim()
-                .to_ascii_lowercase()
-        })
+        self.header("host")
+            .map(|h| h.split(':').next().unwrap_or(h).trim().to_ascii_lowercase())
     }
 
     /// Returns the URL to evaluate for filtering.
@@ -269,7 +269,12 @@ pub fn build_upstream_head(request: &ProxyRequest, authority: &str) -> String {
         // Hop-by-hop headers must not be forwarded.
         if matches!(
             lower.as_str(),
-            "proxy-connection" | "connection" | "keep-alive" | "proxy-authorization" | "te" | "upgrade"
+            "proxy-connection"
+                | "connection"
+                | "keep-alive"
+                | "proxy-authorization"
+                | "te"
+                | "upgrade"
         ) {
             continue;
         }
@@ -335,17 +340,21 @@ pub fn build_error_response(status: u16, reason: &str, message: &str) -> String 
 /// A running filtering proxy.
 #[derive(Debug)]
 pub struct ProxyServer {
-    listener: TcpListener,
+    listener: Mutex<Option<TcpListener>>,
+    address: SocketAddr,
     handle: EngineHandle,
     config: ProxyConfig,
 }
 
 impl ProxyServer {
     /// Binds the listener.
-    pub async fn bind(config: ProxyConfig, handle: EngineHandle) -> std::io::Result<Self> {
+    pub async fn bind(mut config: ProxyConfig, handle: EngineHandle) -> std::io::Result<Self> {
         let listener = TcpListener::bind(config.listen).await?;
+        let address = listener.local_addr()?;
+        config.listen = address;
         Ok(Self {
-            listener,
+            listener: Mutex::new(Some(listener)),
+            address,
             handle,
             config,
         })
@@ -353,38 +362,69 @@ impl ProxyServer {
 
     /// The address actually bound.
     pub fn local_addr(&self) -> std::io::Result<SocketAddr> {
-        self.listener.local_addr()
+        Ok(self.address)
     }
 
     /// Runs the accept loop until cancelled.
     pub async fn run(self: Arc<Self>) {
-        loop {
-            let (stream, peer) = match self.listener.accept().await {
-                Ok(pair) => pair,
-                Err(err) => {
-                    tracing::warn!(error = %err, "proxy accept failed");
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                    continue;
-                }
-            };
-
-            // Disable Nagle: proxy traffic is many small, latency-sensitive
-            // writes, and coalescing them adds delay without saving bandwidth.
-            let _ = stream.set_nodelay(true);
-
-            let this = Arc::clone(&self);
-            tokio::spawn(async move {
-                if let Err(err) = this.serve_connection(stream).await {
-                    tracing::debug!(error = %err, %peer, "proxy connection ended");
-                }
-            });
+        let (_keep_alive, stop) = watch::channel(false);
+        if let Err(err) = self.run_until(stop).await {
+            tracing::warn!(error = %err, "proxy listener stopped");
         }
+    }
+
+    /// Runs with owned connections until true is sent or the sender closes.
+    /// Completion means every child has exited and the listening port is free.
+    pub async fn run_until(
+        self: Arc<Self>,
+        mut stop: watch::Receiver<bool>,
+    ) -> std::io::Result<()> {
+        let listener = self
+            .listener
+            .lock()
+            .map_err(|_| std::io::Error::other("proxy listener lock poisoned"))?
+            .take()
+            .ok_or_else(|| std::io::Error::other("proxy listener already running or stopped"))?;
+        let mut children = JoinSet::new();
+        loop {
+            tokio::select! {
+                biased;
+                _ = stopped(&mut stop) => break,
+                result = children.join_next(), if !children.is_empty() => {
+                    if let Some(Ok(Err(err))) = result {
+                        tracing::debug!(error = %err, "proxy connection ended");
+                    }
+                }
+                accepted = listener.accept(), if children.len() < MAX_CONNECTIONS => {
+                    match accepted {
+                        Ok((stream, peer)) => {
+                            let _ = stream.set_nodelay(true);
+                            let this = Arc::clone(&self);
+                            children.spawn(async move {
+                                tracing::trace!(%peer, "proxy connection accepted");
+                                this.serve_connection(stream).await
+                            });
+                        }
+                        Err(err) => {
+                            tracing::warn!(error = %err, "proxy accept failed");
+                            tokio::select! {
+                                _ = stopped(&mut stop) => break,
+                                _ = tokio::time::sleep(Duration::from_millis(50)) => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        stop_children(&mut children).await;
+        drop(listener);
+        Ok(())
     }
 
     /// Serves one client connection.
     pub async fn serve_connection(&self, mut client: TcpStream) -> std::io::Result<()> {
-        let request = match self.read_head(&mut client).await? {
-            HeadOutcome::Request(request) => *request,
+        let (request, prefix) = match self.read_head(&mut client).await? {
+            HeadOutcome::Request(request, prefix) => (*request, prefix),
             HeadOutcome::Reject(response) => {
                 client.write_all(response.as_bytes()).await?;
                 client.flush().await?;
@@ -411,18 +451,16 @@ impl ProxyServer {
             }
         }
 
-        let blocked = self.handle.decide(
+        let decision = self.handle.decide_result(
             &target_url,
             request.resource_type(),
             None,
             DecisionSource::Proxy,
         );
 
-        if blocked {
-            // The rule that matched is looked up again only for reporting, so
-            // the common path does not pay for it.
-            let rule = self.explain(&target_url);
-            let response = build_block_response(rule.as_deref(), &host);
+        if decision.blocked {
+            let rule = decision.matched_rule.as_ref().map(|rule| rule.raw.as_str());
+            let response = build_block_response(rule, &host);
             client.write_all(response.as_bytes()).await?;
             client.flush().await?;
             return Ok(());
@@ -438,34 +476,33 @@ impl ProxyServer {
             return Ok(());
         };
 
-        let upstream = match tokio::time::timeout(
-            self.config.connect_timeout,
-            TcpStream::connect(&authority),
-        )
-        .await
-        {
-            Ok(Ok(stream)) => stream,
-            Ok(Err(err)) => {
-                let response = build_error_response(
-                    502,
-                    "Bad Gateway",
-                    &format!("Could not connect to {authority}: {err}"),
-                );
-                client.write_all(response.as_bytes()).await?;
-                return Ok(());
-            }
-            Err(_) => {
-                let response = build_error_response(
-                    504,
-                    "Gateway Timeout",
-                    &format!("Timed out connecting to {authority}."),
-                );
-                client.write_all(response.as_bytes()).await?;
-                return Ok(());
-            }
-        };
+        let upstream =
+            match tokio::time::timeout(self.config.connect_timeout, TcpStream::connect(&authority))
+                .await
+            {
+                Ok(Ok(stream)) => stream,
+                Ok(Err(err)) => {
+                    let response = build_error_response(
+                        502,
+                        "Bad Gateway",
+                        &format!("Could not connect to {authority}: {err}"),
+                    );
+                    client.write_all(response.as_bytes()).await?;
+                    return Ok(());
+                }
+                Err(_) => {
+                    let response = build_error_response(
+                        504,
+                        "Gateway Timeout",
+                        &format!("Timed out connecting to {authority}."),
+                    );
+                    client.write_all(response.as_bytes()).await?;
+                    return Ok(());
+                }
+            };
         let _ = upstream.set_nodelay(true);
 
+        let client = PrefixedIo::new(prefix, client);
         if request.is_connect() {
             self.tunnel(client, upstream).await
         } else {
@@ -482,7 +519,17 @@ impl ProxyServer {
         let read = async {
             loop {
                 match parse_request_head(&buffer) {
-                    Ok(Some(request)) => return Ok(HeadOutcome::Request(Box::new(request))),
+                    Ok(Some(request)) => {
+                        if request.head_len > MAX_HEAD {
+                            return Ok(HeadOutcome::Reject(build_error_response(
+                                431,
+                                "Request Header Fields Too Large",
+                                "The request head exceeded NullAD's buffer limit.",
+                            )));
+                        }
+                        let prefix = buffer.split_off(request.head_len);
+                        return Ok(HeadOutcome::Request(Box::new(request), prefix));
+                    }
                     Ok(None) => {}
                     Err(err) => {
                         return Ok(HeadOutcome::Reject(build_error_response(
@@ -518,7 +565,11 @@ impl ProxyServer {
     }
 
     /// Establishes a blind tunnel for a `CONNECT` request.
-    async fn tunnel(&self, mut client: TcpStream, mut upstream: TcpStream) -> std::io::Result<()> {
+    async fn tunnel(
+        &self,
+        mut client: PrefixedIo<TcpStream>,
+        mut upstream: TcpStream,
+    ) -> std::io::Result<()> {
         client
             .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
             .await?;
@@ -530,7 +581,7 @@ impl ProxyServer {
     /// Forwards a plaintext HTTP request and streams the response back.
     async fn forward(
         &self,
-        mut client: TcpStream,
+        mut client: PrefixedIo<TcpStream>,
         mut upstream: TcpStream,
         request: &ProxyRequest,
         authority: &str,
@@ -544,13 +595,6 @@ impl ProxyServer {
         // absolute form.
         tokio::io::copy_bidirectional(&mut client, &mut upstream).await?;
         Ok(())
-    }
-
-    /// Returns the deciding rule for a URL, for reporting only.
-    fn explain(&self, url: &str) -> Option<String> {
-        let request = nullad_engine::Request::new(url, ResourceType::Other);
-        let result = self.handle.engine.check(&request);
-        result.matched_rule.as_ref().map(|r| r.raw.clone())
     }
 
     /// Returns `true` when an authority resolves to one of our own listeners.
@@ -584,7 +628,9 @@ mod tests {
 
     #[test]
     fn parses_absolute_form_request() {
-        let request = parse("GET http://ads.example.com/banner.gif HTTP/1.1\r\nHost: ads.example.com\r\n\r\n");
+        let request = parse(
+            "GET http://ads.example.com/banner.gif HTTP/1.1\r\nHost: ads.example.com\r\n\r\n",
+        );
         assert_eq!(request.method, "GET");
         assert_eq!(request.target, "http://ads.example.com/banner.gif");
         assert_eq!(request.host().as_deref(), Some("ads.example.com"));
@@ -596,7 +642,8 @@ mod tests {
 
     #[test]
     fn parses_connect_request() {
-        let request = parse("CONNECT ads.example.com:443 HTTP/1.1\r\nHost: ads.example.com:443\r\n\r\n");
+        let request =
+            parse("CONNECT ads.example.com:443 HTTP/1.1\r\nHost: ads.example.com:443\r\n\r\n");
         assert!(request.is_connect());
         assert_eq!(request.host().as_deref(), Some("ads.example.com"));
         assert_eq!(request.url_for_filtering(), "https://ads.example.com:443/");
@@ -637,10 +684,16 @@ mod tests {
 
     #[test]
     fn derives_upstream_authority_with_default_ports() {
-        let request = parse("GET http://ads.example.com/x HTTP/1.1\r\nHost: ads.example.com\r\n\r\n");
-        assert_eq!(upstream_authority(&request).as_deref(), Some("ads.example.com:80"));
+        let request =
+            parse("GET http://ads.example.com/x HTTP/1.1\r\nHost: ads.example.com\r\n\r\n");
+        assert_eq!(
+            upstream_authority(&request).as_deref(),
+            Some("ads.example.com:80")
+        );
 
-        let request = parse("GET http://ads.example.com:8080/x HTTP/1.1\r\nHost: ads.example.com:8080\r\n\r\n");
+        let request = parse(
+            "GET http://ads.example.com:8080/x HTTP/1.1\r\nHost: ads.example.com:8080\r\n\r\n",
+        );
         assert_eq!(
             upstream_authority(&request).as_deref(),
             Some("ads.example.com:8080")

@@ -99,6 +99,7 @@ pub fn read_proxy() -> Result<ProxySettings> {
         server,
         bypass,
         auto_config_url,
+        windows_registry: None,
     })
 }
 
@@ -183,6 +184,8 @@ pub fn read_dns() -> Result<DnsSettings> {
     Ok(DnsSettings {
         entries: vec![ResolverEntry {
             interface: RESOLV_CONF.to_owned(),
+            mode: None,
+            interface_index: None,
             servers,
         }],
     })
@@ -245,6 +248,8 @@ mod tests {
         let settings = DnsSettings {
             entries: vec![ResolverEntry {
                 interface: "/tmp/nullad-should-not-exist.conf".into(),
+                mode: None,
+                interface_index: None,
                 servers: vec!["127.0.0.1".parse().unwrap()],
             }],
         };

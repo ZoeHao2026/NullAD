@@ -62,8 +62,8 @@ mod tests {
     fn an_invalid_filter_directive_does_not_panic() {
         // Must not panic even though the directive is nonsense; `init` is called
         // before the UI exists, so a panic here would be an invisible crash.
-        let filter = EnvFilter::try_new("not a valid directive !!!")
-            .or_else(|_| EnvFilter::try_new("info"));
+        let filter =
+            EnvFilter::try_new("not a valid directive !!!").or_else(|_| EnvFilter::try_new("info"));
         assert!(filter.is_ok());
     }
 

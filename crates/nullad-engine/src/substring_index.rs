@@ -44,6 +44,7 @@ impl FragmentPattern {
 pub struct SubstringIndex {
     /// The automaton, or `None` when no fragments were indexed.
     ac: Option<AhoCorasick>,
+    case_sensitive: bool,
     /// Patterns in insertion order, addressed by pattern index.
     patterns: Vec<FragmentPattern>,
     /// For each automaton fragment id, the pattern indices that use it.
@@ -73,9 +74,19 @@ impl SubstringIndex {
     pub fn new() -> Self {
         Self {
             ac: None,
+            case_sensitive: false,
             patterns: Vec::new(),
             fragment_to_patterns: Vec::new(),
             fragment_ids: HashMap::new(),
+        }
+    }
+
+    /// Index for original, case-sensitive URL fragments.
+    #[must_use]
+    pub fn case_sensitive() -> Self {
+        Self {
+            case_sensitive: true,
+            ..Self::new()
         }
     }
 
@@ -141,8 +152,7 @@ impl SubstringIndex {
 
                 let slot = id as usize;
                 if self.fragment_to_patterns.len() <= slot {
-                    self.fragment_to_patterns
-                        .resize(slot + 1, SmallVec::new());
+                    self.fragment_to_patterns.resize(slot + 1, SmallVec::new());
                 }
                 let bucket = &mut self.fragment_to_patterns[slot];
                 if !bucket.contains(&pattern_index) {
@@ -159,7 +169,7 @@ impl SubstringIndex {
         let texts: Vec<&str> = ordered.iter().map(|(text, _)| &**text).collect();
         match AhoCorasickBuilder::new()
             .match_kind(MatchKind::Standard)
-            .ascii_case_insensitive(true)
+            .ascii_case_insensitive(!self.case_sensitive)
             .build(&texts)
         {
             Ok(ac) => self.ac = Some(ac),

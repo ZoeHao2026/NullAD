@@ -42,14 +42,22 @@
 
 pub mod dns;
 pub mod http_proxy;
+mod lifecycle;
 pub mod prefixed;
 pub mod sni;
 
+use std::cell::RefCell;
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use nullad_engine::{FilterEngine, MatchScratch, Request, ResourceType};
+use nullad_engine::{CheckResult, FilterEngine, MatchScratch, Request, ResourceType};
+
+thread_local! {
+    // Matching is synchronous. Runtime workers reuse these buffers without
+    // retaining a borrow across awaits or decision callbacks.
+    static MATCH_SCRATCH: RefCell<MatchScratch> = RefCell::new(MatchScratch::new());
+}
 
 pub use dns::{DnsConfig, DnsServer};
 pub use http_proxy::{ProxyConfig, ProxyServer};
@@ -249,10 +257,8 @@ impl EngineHandle {
 
     /// Evaluates a request and records the outcome.
     ///
-    /// The scratch buffer is created per call here because interceptors run one
-    /// task per connection and holding a pooled scratch buffer per task would
-    /// cost more memory than it saves. Callers with their own hot loop should
-    /// use [`FilterEngine::check_with`] directly.
+    /// Runtime workers reuse their scratch buffer only while matching. No
+    /// scratch borrow is retained while publishing a decision to a sink.
     pub fn decide(
         &self,
         url: &str,
@@ -260,13 +266,24 @@ impl EngineHandle {
         page: Option<&str>,
         source: DecisionSource,
     ) -> bool {
+        self.decide_result(url, resource_type, page, source).blocked
+    }
+
+    /// Evaluates and records a request, preserving the deciding rule for callers.
+    pub fn decide_result(
+        &self,
+        url: &str,
+        resource_type: ResourceType,
+        page: Option<&str>,
+        source: DecisionSource,
+    ) -> CheckResult {
         let mut request = Request::new(url, resource_type);
         if let Some(page) = page {
             request = request.with_page(page);
         }
 
-        let mut scratch = MatchScratch::new();
-        let result = self.engine.check_with(&request, &mut scratch);
+        let result = MATCH_SCRATCH
+            .with(|scratch| self.engine.check_with(&request, &mut scratch.borrow_mut()));
 
         match source {
             DecisionSource::Proxy => self.stats.record_proxy(result.blocked),
@@ -283,7 +300,7 @@ impl EngineHandle {
             source,
         });
 
-        result.blocked
+        result
     }
 
     /// Decides purely on a hostname, which is all the DNS layer has.
@@ -393,5 +410,66 @@ mod tests {
         assert!(recorded[0].blocked);
         assert_eq!(recorded[0].host, "ads.example.com");
         assert_eq!(recorded[0].source, DecisionSource::Proxy);
+    }
+
+    #[test]
+    fn scratch_reuse_matches_fresh_checks_across_rule_set_sizes_and_threads() {
+        let handle = handle("||initial.example^");
+        for count in [1, 1000, 3] {
+            let mut builder = RuleSetBuilder::new();
+            for index in 0..count {
+                builder.add_list_auto(&format!("||ads{index}.example^\n/banner{index}.gif"));
+            }
+            handle.engine.swap(builder.build().unwrap());
+            std::thread::scope(|scope| {
+                for _ in 0..4 {
+                    let handle = &handle;
+                    scope.spawn(move || {
+                        for url in [
+                            "http://ads0.example/x",
+                            "http://safe.example/banner0.gif",
+                            "http://safe.example/clean",
+                        ] {
+                            for _ in 0..10 {
+                                let request = Request::new(url, ResourceType::Other);
+                                let expected = handle.engine.check(&request);
+                                let actual = handle.decide_result(
+                                    url,
+                                    ResourceType::Other,
+                                    None,
+                                    DecisionSource::Proxy,
+                                );
+                                assert_eq!(actual, expected);
+                            }
+                        }
+                    });
+                }
+            });
+        }
+    }
+
+    #[test]
+    fn decision_sink_can_reenter_matching_without_borrowing_scratch() {
+        #[derive(Debug)]
+        struct ReentrantSink(Arc<FilterEngine>);
+        impl DecisionSink for ReentrantSink {
+            fn record(&self, _decision: Decision) {
+                let nested = EngineHandle::new(self.0.clone());
+                assert!(nested.decide(
+                    "http://blocked.example/x",
+                    ResourceType::Other,
+                    None,
+                    DecisionSource::Proxy
+                ));
+            }
+        }
+        let handle = handle("||blocked.example^");
+        let sink = Arc::new(ReentrantSink(handle.engine.clone()));
+        assert!(handle.with_sink(sink).decide(
+            "http://blocked.example/x",
+            ResourceType::Other,
+            None,
+            DecisionSource::Proxy
+        ));
     }
 }

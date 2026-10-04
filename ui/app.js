@@ -1,501 +1,314 @@
-/* NullAD desktop UI controller.
- *
- * Talks to the Rust side through Tauri's `invoke` and listens for the
- * `nullad://status` event that the backend emits once per second. All real work
- * happens in Rust; this file only renders state and forwards user intent.
- */
-"use strict";
-
-/* Tauri exposes its IPC bridge as a global when the app is packaged. During
- * development in a plain browser it is absent, so every call is guarded and the
- * UI degrades to a clear "backend unavailable" message rather than throwing. */
-const invoke = window.__TAURI__ && window.__TAURI__.core
-  ? window.__TAURI__.core.invoke
-  : null;
-const listen = window.__TAURI__ && window.__TAURI__.event
-  ? window.__TAURI__.event.listen
-  : null;
-
-const $ = (id) => document.getElementById(id);
-
-/** Latest status pushed by the backend. */
-let status = null;
-/** Latest decision log entries. */
-let decisions = [];
-/** Current log filter: all | blocked | allowed. */
-let logFilter = "all";
-/** Settings currently loaded from the backend. */
-let settings = null;
-
-/* ------------------------------------------------------------- formatting */
-
-function fmtCount(n) {
-  const value = Number(n) || 0;
-  if (value >= 1_000_000) return (value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1) + "M";
-  if (value >= 10_000) return (value / 1_000).toFixed(value >= 100_000 ? 0 : 1) + "k";
-  return String(value);
-}
-
-function fmtPercent(ratio) {
-  const value = (Number(ratio) || 0) * 100;
-  return value.toFixed(1) + "%";
-}
-
-function fmtTime(ms) {
-  if (!ms) return "--:--:--";
-  const d = new Date(Number(ms));
-  if (Number.isNaN(d.getTime())) return "--:--:--";
-  return d.toLocaleTimeString(undefined, { hour12: false });
-}
-
-function escapeHtml(text) {
-  return String(text == null ? "" : text)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-/* ---------------------------------------------------------------- toasts */
-
-function toast(message, kind) {
-  const el = document.createElement("div");
-  el.className = "toast" + (kind ? " is-" + kind : "");
-  el.textContent = message;
-  $("toasts").appendChild(el);
-  setTimeout(() => el.remove(), kind === "error" ? 9000 : 5000);
-}
-
-/** Wraps an invoke call so a backend error becomes a visible toast. */
-async function call(command, args) {
-  if (!invoke) {
-    toast("The NullAD backend is not available in this context.", "error");
-    return null;
+/* Controller: navigation, user intent and refresh scheduling. No mock state. */
+(function (root) {
+  "use strict";
+  const { ipc, state: helpers, i18n, views: v } = root.NullAD;
+  const { $ } = v;
+  const t = i18n.t;
+  const fieldIds = { proxy_enabled:"set-proxy-enabled", proxy_port:"set-proxy-port", dns_enabled:"set-dns-enabled", dns_port:"set-dns-port", dns_upstream:"set-dns-upstream", dns_nxdomain:"set-dns-nxdomain", intercept_system_proxy:"set-system-proxy" };
+  let status = null, decisions = null, lists = null, parsedRules = null;
+  let savedSettings = null, platform = null, benchmark = null, checkResult = null;
+  let activeView = "dashboard", filter = "all", customDirty = false, customLoaded = false;
+  let protectionPending = false, settingsPending = false, restorationPending = false;
+  let statusPending = false, decisionsPending = false, clearPending = false;
+  let eventError = null, statusError = null, unlisten = null, restoreReport = null;
+  const feedback = {};
+  let pendingChanges = 0;
+  const errorText = (error) => error.message === "NULLAD_BACKEND_UNAVAILABLE" ? t("backendNotice") : error.message;
+  function showError(error) { v.toast(errorText(error), "error"); }
+  function toastKey(key, kind, values) { v.toast(t(key, values), kind, { key, values }); }
+  function renderFeedback(id) {
+    const item = feedback[id];
+    if (item) v.hint(id, [item.key ? t(item.key, item.values) : item.raw, ...(item.suffix || [])].filter(Boolean).join("\n"), item.kind);
   }
-  try {
-    return await invoke(command, args || {});
-  } catch (err) {
-    const message = err && err.message ? err.message : String(err);
-    toast(message, "error");
-    return null;
+  function setFeedback(id, key, kind, values, suffix) { feedback[id] = { key, kind, values, suffix }; renderFeedback(id); }
+  function setErrorFeedback(id, error) { feedback[id] = { raw:errorText(error), kind:"error" }; renderFeedback(id); }
+  function connectionMessage() { return statusError ? t("connectionFailed", { error:errorText(statusError) }) : eventError ? t("eventsFailed", { error:errorText(eventError) }) : ""; }
+  function renderRestore() {
+    if (!restoreReport) return;
+    const remaining = helpers.pendingCount(restoreReport.pending_changes);
+    const details = (restoreReport.items || []).map((item) => {
+      const key = { systemproxy:"systemProxyKind", dnsresolver:"dnsResolverKind" }[String(item.kind).replace(/[^a-z]/gi, "").toLowerCase()];
+      return (key ? t(key) : item.kind) + ": " + t(item.restored ? "restored" : "restoreFailed") + (item.error ? " — " + item.error : "");
+    });
+    setFeedback("restore-result", remaining ? "restorePartial" : "restoreSuccess", remaining ? "error" : "ok", { count:remaining }, details);
   }
-}
-
-/* ------------------------------------------------------------ navigation */
-
-function showView(name) {
-  document.querySelectorAll(".nav-item").forEach((btn) => {
-    btn.classList.toggle("is-active", btn.dataset.view === name);
+  function currentPatch() {
+    return helpers.listenerPatch(Object.fromEntries(helpers.fields.map((field) => {
+      const el = $(fieldIds[field]);
+      return [field, el.type === "checkbox" ? el.checked : el.value];
+    })));
+  }
+  function syncSettingsControls() {
+    const dirty = helpers.changed(savedSettings, currentPatch());
+    $("save-settings").disabled = !ipc.available || !savedSettings || !dirty || settingsPending;
+    $("cancel-settings").disabled = !dirty || settingsPending;
+    $("set-dns-port").disabled = !ipc.available || settingsPending || !$("set-dns-enabled").checked;
+    $("set-dns-upstream").disabled = !ipc.available || settingsPending || !$("set-dns-enabled").checked;
+    $("set-dns-nxdomain").disabled = !ipc.available || settingsPending || !$("set-dns-enabled").checked;
+  }
+  function renderDynamic() {
+    v.renderStatus(status, protectionPending);
+    v.renderDecisions(decisions, filter, status);
+    v.renderPending(pendingChanges, restorationPending);
+    v.renderPlatform(platform, status);
+    v.renderBenchmark(benchmark);
+    v.renderCheck(checkResult);
+    if (lists) v.renderLists(lists, toggleList);
+    if (parsedRules) v.renderRules(parsedRules);
+    Object.keys(feedback).forEach(renderFeedback);
+    renderRestore();
+    if (v.translateToasts) v.translateToasts();
+    if (!ipc.available) {
+      v.set("state-label", t("backendUnavailable"));
+      v.notice("connection-notice", t("backendNotice"));
+      $("toggle-protection").disabled = true;
+      $("restore-system").disabled = true;
+    } else v.notice("connection-notice", connectionMessage());
+    syncSettingsControls();
+  }
+  function setLanguage(language) { i18n.apply(language); renderDynamic(); }
+  async function refreshStatus() {
+    if (!ipc.available || statusPending) return;
+    statusPending = true;
+    try {
+      status = await ipc.call("get_status");
+      pendingChanges = helpers.pendingCount(status.pending_changes);
+      statusError = null;
+      v.renderStatus(status, protectionPending);
+      v.renderPending(pendingChanges, restorationPending);
+      v.renderPlatform(platform, status);
+      v.notice("connection-notice", connectionMessage());
+    } catch (error) {
+      statusError = error;
+      v.notice("connection-notice", connectionMessage());
+    } finally { statusPending = false; }
+  }
+  async function loadDecisions() {
+    if (!ipc.available || decisionsPending || clearPending) return;
+    decisionsPending = true;
+    try {
+      const loaded = await ipc.call("recent_decisions", { limit:500 });
+      if (!Array.isArray(loaded)) throw new Error("Invalid decision-log response");
+      if (!clearPending) { decisions = loaded; v.renderDecisions(decisions, filter, status); }
+    } catch (error) { v.notice("connection-notice", t("connectionFailed", { error:errorText(error) })); }
+    finally { decisionsPending = false; }
+  }
+  async function loadLists() {
+    const loaded = await ipc.call("list_lists");
+    if (!Array.isArray(loaded)) throw new Error("Invalid filter-list response");
+    lists = loaded; v.renderLists(lists, toggleList);
+  }
+  async function loadRules() {
+    parsedRules = await ipc.call("list_rules", { limit:120 });
+    v.renderRules(parsedRules);
+  }
+  async function loadCustom() {
+    if (customDirty || customLoaded) return;
+    const text = await ipc.call("get_custom_rules");
+    if (!customDirty) { $("custom-rules").value = text; customLoaded = true; }
+  }
+  async function loadSettings() {
+    if (savedSettings && helpers.changed(savedSettings, currentPatch())) return;
+    const loaded = await ipc.call("get_settings");
+    savedSettings = loaded;
+    v.fillSettings(loaded); syncSettingsControls();
+  }
+  async function loadPlatform() {
+    platform = await ipc.call("platform_info"); v.renderPlatform(platform, status);
+  }
+  async function showView(name) {
+    activeView = name;
+    document.querySelectorAll(".nav-item").forEach((button) => {
+      const selected = button.dataset.view === name;
+      button.classList.toggle("is-active", selected);
+      if (selected) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
+    });
+    document.querySelectorAll(".view").forEach((section) => {
+      section.hidden = section.id !== "view-" + name;
+      section.classList.toggle("is-active", !section.hidden);
+    });
+    $("main").scrollTop = 0;
+    if (!ipc.available) return;
+    try {
+      if (name === "rules") await Promise.all([loadLists(), loadCustom()]);
+      if (name === "settings") await Promise.all([loadSettings(), loadPlatform(), refreshStatus()]);
+      if (name === "logs" || name === "dashboard") await loadDecisions();
+    } catch (error) { showError(error); }
+  }
+  function reportReload(result) {
+    const values = { rules:v.count(result.rules), ms:Number(result.elapsed_ms).toFixed(0), failures:v.count(result.failures) };
+    const kind = result.warnings && result.warnings.length ? "warn" : "ok";
+    toastKey("reloadResult", kind, values);
+    setFeedback("custom-status", "reloadResult", kind, values, result.warnings || []);
+  }
+  async function toggleList(box) {
+    const enabled = box.checked; box.disabled = true;
+    try {
+      const result = await ipc.call("set_list_enabled", { id:Number(box.dataset.listId), enabled });
+      reportReload(result); await Promise.all([loadLists(), refreshStatus()]);
+      if ($("parsed-rules").open) await loadRules();
+    } catch (error) { box.checked = !enabled; showError(error); }
+    finally { box.disabled = false; }
+  }
+  $("nav").addEventListener("click", (event) => { const button = event.target.closest("[data-view]"); if (button) showView(button.dataset.view); });
+  document.querySelectorAll("[data-go]").forEach((button) => button.addEventListener("click", () => showView(button.dataset.go)));
+  $("log-filter").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-filter]"); if (!button) return;
+    filter = button.dataset.filter;
+    $("log-filter").querySelectorAll("button").forEach((item) => {
+      const selected = item.dataset.filter === filter;
+      item.classList.toggle("is-active", selected); item.setAttribute("aria-pressed", String(selected));
+    });
+    v.renderDecisions(decisions, filter, status);
   });
-  document.querySelectorAll(".view").forEach((view) => {
-    view.classList.toggle("is-active", view.id === "view-" + name);
-  });
-  if (name === "rules") {
-    loadLists();
-    loadRuleViewer();
-    loadCustomRules();
-  }
-  if (name === "settings") {
-    loadSettings();
-    loadPlatformInfo();
-    loadPendingChanges();
-  }
-  if (name === "logs") {
-    loadDecisions();
-  }
-}
-
-document.getElementById("nav").addEventListener("click", (event) => {
-  const button = event.target.closest(".nav-item");
-  if (button) showView(button.dataset.view);
-});
-
-/* -------------------------------------------------------------- rendering */
-
-function renderStatus(next) {
-  status = next;
-  if (!next) return;
-
-  const engine = next.engine || {};
-  const rules = next.rule_set || {};
-  const ic = next.intercept || {};
-
-  $("stat-queries").textContent = fmtCount(engine.queries);
-  $("stat-blocked").textContent = fmtCount(engine.blocked);
-  $("stat-allowed").textContent = fmtCount(engine.allowed);
-  $("stat-ratio").textContent = fmtPercent(engine.block_ratio) + " of traffic";
-  $("stat-exceptions").textContent = fmtCount(engine.exceptions_hit) + " by exception";
-  $("stat-rules").textContent = fmtCount(rules.rules);
-  $("stat-lists").textContent = (next.lists || []).filter((l) => l.enabled).length + " lists";
-  $("rule-count").textContent = fmtCount(rules.rules) + " rules";
-
-  $("ic-proxy").textContent = (ic.proxy_blocked || 0) + " / " + (ic.proxy_requests || 0);
-  $("ic-sni").textContent = (ic.sni_blocked || 0) + " / " + (ic.sni_connections || 0);
-  $("ic-dns").textContent = (ic.dns_blocked || 0) + " / " + (ic.dns_queries || 0);
-
-  $("rs-domain").textContent = rules.domain_rules || 0;
-  $("rs-domainpath").textContent = rules.domain_path_rules || 0;
-  $("rs-fragment").textContent = rules.fragment_rules || 0;
-  $("rs-regex").textContent = rules.regex_rules || 0;
-  $("rs-trie").textContent = rules.trie_nodes || 0;
-  $("rs-frag").textContent = rules.distinct_fragments || 0;
-
-  const running = next.protection === "running";
-  $("state-dot").className = "dot " + (running ? "is-running" : "");
-  $("state-label").textContent = running ? "Running" : "Stopped";
-  $("toggle-protection").textContent = running ? "Stop protection" : "Start protection";
-  $("toggle-protection").classList.toggle("btn-primary", !running);
-  $("toggle-protection").classList.toggle("btn-ghost", running);
-
-  $("clear-log").disabled = false;
-
-  if ($("view-logs").classList.contains("is-active")) {
-    renderLogFeed();
-  }
-}
-
-function renderFeed(entries, target) {
-  if (!entries.length) {
-    target.innerHTML = '<div class="empty">No requests yet. Start protection to see activity.</div>';
-    return;
-  }
-  target.innerHTML = entries
-    .map((entry) => {
-      const cls = entry.blocked ? "is-blocked" : "is-allowed";
-      const tag = entry.blocked ? "blocked" : "allowed";
-      const rule = entry.rule ? " — " + escapeHtml(entry.rule) : "";
-      return (
-        '<div class="feed-row ' + cls + '" title="' + escapeHtml(entry.url) + rule + '">' +
-          '<span class="feed-time">' + fmtTime(entry.timestamp_ms) + "</span>" +
-          '<span class="feed-host">' + escapeHtml(entry.host || entry.url) + "</span>" +
-          '<span class="feed-tag ' + cls + '">' + tag + "</span>" +
-        "</div>"
-      );
-    })
-    .join("");
-}
-
-function renderLogFeed() {
-  let entries = decisions;
-  if (logFilter === "blocked") entries = entries.filter((e) => e.blocked);
-  if (logFilter === "allowed") entries = entries.filter((e) => !e.blocked);
-  renderFeed(entries.slice(0, 400), $("log-feed"));
-}
-
-/* ----------------------------------------------------------------- views */
-
-async function loadDecisions() {
-  const result = await call("recent_decisions", { limit: 400 });
-  if (Array.isArray(result)) {
-    decisions = result;
-    renderLogFeed();
-    renderFeed(decisions.slice(0, 60), $("feed"));
-  }
-}
-
-async function loadLists() {
-  const lists = await call("list_lists");
-  if (!Array.isArray(lists)) return;
-
-  const body = $("lists-body");
-  if (!lists.length) {
-    body.innerHTML = '<tr><td colspan="6" class="empty">No lists configured.</td></tr>';
-    return;
-  }
-
-  body.innerHTML = lists
-    .map((list) => {
-      const checked = list.enabled ? "checked" : "";
-      const dim = list.enabled ? "" : ' class="is-off"';
-      return (
-        "<tr" + dim + ">" +
-          '<td><input type="checkbox" data-list-id="' + list.id + '" ' + checked + " /></td>" +
-          "<td>" + escapeHtml(list.name) + "</td>" +
-          '<td class="muted sm">' + escapeHtml(list.source) + "</td>" +
-          '<td class="num">' + list.rules + "</td>" +
-          '<td class="num">' + (list.failures ? '<span style="color:var(--warn)">' + list.failures + "</span>" : "0") + "</td>" +
-          '<td class="num">' + list.cosmetic + "</td>" +
-        "</tr>"
-      );
-    })
-    .join("");
-
-  body.querySelectorAll("input[data-list-id]").forEach((box) => {
-    box.addEventListener("change", async () => {
-      const result = await call("set_list_enabled", {
-        id: Number(box.dataset.listId),
-        enabled: box.checked,
+  $("toggle-protection").addEventListener("click", async () => {
+    if (protectionPending || helpers.isBusy(status)) return;
+    protectionPending = true; v.renderStatus(status, true);
+    try {
+      const notes = await ipc.call(helpers.isActive(status) ? "stop_protection" : "start_protection");
+      (notes || []).forEach((note) => {
+        const key = { "Protection started":"protectionStarted", "Protection stopped":"protectionStopped" }[note];
+        if (key) toastKey(key, "ok"); else v.toast(note, "warn");
       });
-      reportReload(result);
-      loadLists();
-    });
+    } catch (error) { showError(error); }
+    finally { protectionPending = false; await refreshStatus(); }
   });
-}
-
-function reportReload(result) {
-  if (!result) return;
-  const parts = [result.rules + " rules loaded in " + result.elapsed_ms.toFixed(0) + " ms"];
-  if (result.failures) parts.push(result.failures + " quarantined");
-  toast(parts.join(", "), result.warnings && result.warnings.length ? "warn" : "ok");
-  if (result.warnings && result.warnings.length) {
-    result.warnings.forEach((warning) => toast(warning, "warn"));
-    const status = $("custom-status");
-    if (status) {
-      status.textContent = result.warnings.join("\n");
-      status.className = "hint is-warn";
+  $("log-clear").addEventListener("click", async () => {
+    if (clearPending) return;
+    clearPending = true; $("log-clear").disabled = true;
+    try {
+      await ipc.call("clear_log"); decisions = [];
+      v.renderDecisions(decisions, filter, status); toastKey("logsCleared", "ok");
+    } catch (error) { showError(error); }
+    finally { clearPending = false; $("log-clear").disabled = !ipc.available; }
+  });
+  $("reload-lists").addEventListener("click", async () => {
+    $("reload-lists").disabled = true;
+    try {
+      reportReload(await ipc.call("reload_lists"));
+      await Promise.all([loadLists(), refreshStatus()]);
+      if ($("parsed-rules").open) await loadRules();
+    } catch (error) { showError(error); }
+    finally { $("reload-lists").disabled = !ipc.available; }
+  });
+  $("custom-rules").addEventListener("input", () => {
+    customDirty = true; setFeedback("custom-status", "customUnsaved", "warn");
+  });
+  $("save-custom").addEventListener("click", async () => {
+    $("save-custom").disabled = true; $("custom-rules").disabled = true;
+    try {
+      const result = await ipc.call("set_custom_rules", { rules:$("custom-rules").value });
+      customDirty = false; customLoaded = true; reportReload(result);
+      await Promise.all([loadLists(), refreshStatus()]);
+      if ($("parsed-rules").open) await loadRules();
+    } catch (error) { setErrorFeedback("custom-status", error); showError(error); }
+    finally { $("save-custom").disabled = !ipc.available; $("custom-rules").disabled = !ipc.available; }
+  });
+  $("parsed-rules").addEventListener("toggle", async () => {
+    if (!$("parsed-rules").open || !ipc.available) return;
+    try { await loadRules(); } catch (error) { showError(error); }
+  });
+  $("check-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const url = $("check-url").value.trim(), page = $("check-page").value.trim();
+    try {
+      for (const value of [url, page].filter(Boolean)) if (!["http:", "https:"].includes(new URL(value).protocol)) throw new Error(t("invalidUrl"));
+    } catch (_) { toastKey("invalidUrl", "warn"); return; }
+    $("do-check").disabled = true;
+    try {
+      checkResult = await ipc.call("check_url", { url, page:page || null, resourceType:$("check-type").value });
+      v.renderCheck(checkResult);
+    } catch (error) { showError(error); }
+    finally { $("do-check").disabled = !ipc.available; }
+  });
+  $("settings-form").addEventListener("input", () => {
+    setFeedback("settings-status", helpers.changed(savedSettings, currentPatch()) ? "settingsUnsaved" : "", "warn");
+    syncSettingsControls();
+  });
+  $("settings-form").addEventListener("change", syncSettingsControls);
+  $("cancel-settings").addEventListener("click", () => {
+    if (savedSettings) v.fillSettings(savedSettings);
+    setFeedback("settings-status", ""); syncSettingsControls();
+  });
+  $("settings-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (settingsPending || !savedSettings) return;
+    const patch = currentPatch(), invalid = helpers.validate(patch);
+    if (invalid) { setFeedback("settings-status", invalid, "error"); toastKey(invalid, "warn"); return; }
+    settingsPending = true; $("settings-form").querySelectorAll("input").forEach((el) => el.disabled = true);
+    syncSettingsControls(); setFeedback("settings-status", "saving");
+    try {
+      const saved = await ipc.call("update_settings", { patch:helpers.settingsDelta(savedSettings, patch) });
+      // Commit the UI snapshot only when persistence succeeded.
+      savedSettings = saved; v.fillSettings(saved);
+      setFeedback("settings-status", "settingsSaved", "ok"); toastKey("settingsSaved", "ok");
+      await refreshStatus();
+    } catch (error) { setErrorFeedback("settings-status", error); showError(error); }
+    finally {
+      settingsPending = false;
+      $("settings-form").querySelectorAll("input").forEach((el) => el.disabled = !ipc.available);
+      syncSettingsControls();
     }
-  }
-}
-
-async function loadRuleViewer() {
-  const rules = await call("list_rules", { limit: 120 });
-  if (!Array.isArray(rules)) return;
-
-  $("rule-viewer-note").textContent = rules.length + " shown";
-  const target = $("rule-viewer");
-  if (!rules.length) {
-    target.innerHTML = '<div class="empty">No rules loaded.</div>';
-    return;
-  }
-  target.innerHTML = rules
-    .map((rule) => {
-      const cls = rule.action === "allow" ? "is-allowed" : "is-blocked";
-      return (
-        '<div class="feed-row ' + cls + '" title="' + escapeHtml(rule.pattern) + '">' +
-          '<span class="feed-time">L' + rule.source_line + "</span>" +
-          '<span class="feed-host">' + escapeHtml(rule.raw) + "</span>" +
-          '<span class="feed-tag ' + cls + '">' + escapeHtml(rule.action) + "</span>" +
-        "</div>"
-      );
-    })
-    .join("");
-}
-
-async function loadCustomRules() {
-  const text = await call("get_custom_rules");
-  if (typeof text === "string") $("custom-rules").value = text;
-}
-
-async function loadSettings() {
-  const loaded = await call("get_settings");
-  if (!loaded) return;
-  settings = loaded;
-
-  $("set-proxy-enabled").checked = !!loaded.proxy_enabled;
-  $("set-proxy-port").value = loaded.proxy_port;
-  $("set-dns-enabled").checked = !!loaded.dns_enabled;
-  $("set-dns-port").value = loaded.dns_port;
-  $("set-dns-upstream").value = loaded.dns_upstream;
-  $("set-dns-nxdomain").checked = !!loaded.dns_nxdomain;
-  $("set-system-proxy").checked = !!loaded.intercept_system_proxy;
-
-  $("dns-hint").textContent =
-    loaded.dns_port < 1024
-      ? "Ports below 1024 need administrator rights. 5353 is a good unprivileged choice."
-      : "";
-  $("dns-hint").className = loaded.dns_port < 1024 ? "hint is-warn" : "hint";
-}
-
-async function loadPlatformInfo() {
-  const info = await call("platform_info");
-  if (!info) return;
-  $("ab-platform").textContent = info.platform;
-  $("ab-elevated").textContent = info.elevated ? "yes" : "no";
-  $("ab-rules").textContent = fmtCount(info.rule_count);
-  $("ab-data").textContent = info.data_dir || "—";
-  $("ab-config").textContent = info.config_dir || "—";
-}
-
-async function loadPendingChanges() {
-  const pending = await call("pending_changes");
-  if (!Array.isArray(pending)) return;
-  const target = $("pending-changes");
-  if (!pending.length) {
-    target.textContent = "No outstanding system changes.";
-    target.className = "hint is-ok";
-    return;
-  }
-  target.textContent =
-    pending.length + " change(s) still applied:\n" +
-    pending.map((p) => "• " + p.description).join("\n");
-  target.className = "hint is-warn";
-}
-
-/* --------------------------------------------------------------- actions */
-
-$("toggle-protection").addEventListener("click", async () => {
-  const running = status && status.protection === "running";
-  $("toggle-protection").disabled = true;
-
-  const notes = running
-    ? await call("stop_protection")
-    : await call("start_protection");
-
-  $("toggle-protection").disabled = false;
-
-  if (Array.isArray(notes)) {
-    notes.forEach((note) => toast(note, note.toLowerCase().includes("could not") ? "warn" : "ok"));
-  }
-  refreshStatus();
-});
-
-$("clear-log").addEventListener("click", async () => {
-  await call("clear_log");
-  decisions = [];
-  renderFeed([], $("feed"));
-  renderLogFeed();
-});
-
-$("log-clear").addEventListener("click", async () => {
-  await call("clear_log");
-  decisions = [];
-  renderLogFeed();
-});
-
-$("log-filter").addEventListener("change", (event) => {
-  logFilter = event.target.value;
-  renderLogFeed();
-});
-
-$("reload-lists").addEventListener("click", async () => {
-  reportReload(await call("reload_lists"));
-  loadLists();
-  loadRuleViewer();
-});
-
-$("save-custom").addEventListener("click", async () => {
-  const result = await call("set_custom_rules", { rules: $("custom-rules").value });
-  reportReload(result);
-  loadLists();
-  loadRuleViewer();
-});
-
-$("do-check").addEventListener("click", async () => {
-  const url = $("check-url").value.trim();
-  if (!url) {
-    toast("Enter a URL to check.", "warn");
-    return;
-  }
-  const result = await call("check_url", {
-    url: url,
-    page: $("check-page").value.trim() || null,
-    resourceType: $("check-type").value,
   });
-  if (!result) return;
-
-  const verdict = result.blocked ? "BLOCKED" : "ALLOWED";
-  const cls = result.blocked ? "is-blocked" : "is-allowed";
-  $("check-result").innerHTML =
-    '<span class="verdict ' + cls + '">' + verdict + "</span>" +
-    ' <span class="muted sm">' + result.matched + " rule(s) matched, host " +
-    escapeHtml(result.host || "(unparsed)") + "</span>" +
-    (result.rule ? '<div class="rule-line">decided by: ' + escapeHtml(result.rule) + "</div>" : "");
-});
-
-$("check-url").addEventListener("keydown", (event) => {
-  if (event.key === "Enter") $("do-check").click();
-});
-
-$("run-bench").addEventListener("click", async () => {
-  const target = $("bench-result");
-  target.textContent = "Measuring…";
-  target.className = "hint";
-  const result = await call("benchmark", { iterations: 50000 });
-  if (!result) {
-    target.textContent = "Benchmark failed.";
-    target.className = "hint is-warn";
-    return;
-  }
-  target.textContent =
-    result.iterations.toLocaleString() + " lookups over " + fmtCount(result.rules) + " rules\n" +
-    "throughput: " + Math.round(result.throughput_per_sec).toLocaleString() + " lookups/sec\n" +
-    "mean " + result.mean_us.toFixed(3) + " µs · p50 " + result.p50_us.toFixed(3) +
-    " µs · p99 " + result.p99_us.toFixed(3) + " µs";
-  target.className = "hint is-ok";
-});
-
-$("restore-system").addEventListener("click", async () => {
-  const notes = await call("restore_system_changes");
-  if (Array.isArray(notes)) notes.forEach((note) => toast(note, "ok"));
-  loadPendingChanges();
-  loadSettings();
-});
-
-/** Pushes the settings form back to the backend. */
-async function saveSettings() {
-  if (!settings) return;
-  const next = Object.assign({}, settings, {
-    proxy_enabled: $("set-proxy-enabled").checked,
-    proxy_port: Number($("set-proxy-port").value) || 8080,
-    dns_enabled: $("set-dns-enabled").checked,
-    dns_port: Number($("set-dns-port").value) || 5353,
-    dns_upstream: $("set-dns-upstream").value.trim() || "8.8.8.8:53",
-    dns_nxdomain: $("set-dns-nxdomain").checked,
-    intercept_system_proxy: $("set-system-proxy").checked,
+  $("language-select").addEventListener("change", async () => {
+    const language = $("language-select").value;
+    if (!ipc.available) { setLanguage(language); return; }
+    $("language-select").disabled = true;
+    try {
+      const saved = await ipc.call("update_settings", { patch:{ ui_language:language } });
+      if (savedSettings) savedSettings.ui_language = saved.ui_language;
+      setLanguage(saved.ui_language);
+    } catch (error) { $("language-select").value = i18n.language; showError(error); }
+    finally { $("language-select").disabled = false; }
   });
-
-  const warnings = await call("update_settings", { settings: next });
-  settings = next;
-  if (Array.isArray(warnings) && warnings.length) {
-    warnings.forEach((warning) => toast(warning, "warn"));
-  } else {
-    toast("Settings saved.", "ok");
-  }
-  loadPendingChanges();
-}
-
-[
-  "set-proxy-enabled",
-  "set-proxy-port",
-  "set-dns-enabled",
-  "set-dns-port",
-  "set-dns-upstream",
-  "set-dns-nxdomain",
-  "set-system-proxy",
-].forEach((id) => {
-  $(id).addEventListener("change", saveSettings);
-});
-
-/* ---------------------------------------------------------------- startup */
-
-async function refreshStatus() {
-  const next = await call("get_status");
-  if (next) renderStatus(next);
-}
-
-async function init() {
-  if (!invoke) {
-    toast(
-      "Running outside the NullAD shell: no backend is connected, so this page " +
-        "cannot read or change protection state.",
-      "warn"
-    );
-    $("state-label").textContent = "Backend unavailable";
-    return;
-  }
-
-  if (listen) {
-    await listen("nullad://status", (event) => renderStatus(event.payload));
-    await listen("nullad://request-start", () => $("toggle-protection").click());
-    await listen("nullad://request-stop", () => {
-      if (status && status.protection === "running") $("toggle-protection").click();
+  $("restore-system").addEventListener("click", async () => {
+    restorationPending = true; v.renderPending(pendingChanges, true);
+    try {
+      const report = await ipc.call("restore_system_changes");
+      restoreReport = report;
+      pendingChanges = helpers.pendingCount(report.pending_changes);
+      renderRestore();
+      toastKey(pendingChanges ? "restorePartial" : "restoreSuccess", pendingChanges ? "error" : "ok", { count:pendingChanges });
+      await refreshStatus();
+    } catch (error) { restoreReport = null; setErrorFeedback("restore-result", error); showError(error); }
+    finally { restorationPending = false; v.renderPending(pendingChanges, false); }
+  });
+  $("run-bench").addEventListener("click", async () => {
+    $("run-bench").disabled = true; v.set("bench-result", t("measuring"));
+    try { benchmark = await ipc.call("benchmark", { iterations:50000 }); v.renderBenchmark(benchmark); }
+    catch (error) { v.set("bench-result", errorText(error)); showError(error); }
+    finally { $("run-bench").disabled = !ipc.available; }
+  });
+  document.querySelectorAll("[data-copy]").forEach((button) => button.addEventListener("click", async () => {
+    const input = $(button.dataset.copy); if (input.value === "—") return;
+    try { await navigator.clipboard.writeText(input.value); toastKey("copied", "ok"); }
+    catch (_) { input.focus(); input.select(); toastKey("copyFailed", "warn"); }
+  }));
+  async function init() {
+    i18n.apply(i18n.language); renderDynamic();
+    if (!ipc.available) return;
+    document.querySelectorAll("[data-backend]").forEach((el) => el.disabled = false);
+    try {
+      unlisten = await ipc.listen("nullad://status", (event) => {
+        status = event.payload; pendingChanges = helpers.pendingCount(status.pending_changes);
+        v.renderStatus(status, protectionPending); v.renderPending(pendingChanges, restorationPending); v.renderPlatform(platform, status);
+      });
+    } catch (error) {
+      eventError = error;
+      v.notice("connection-notice", connectionMessage());
+    }
+    await refreshStatus();
+    await Promise.all([
+      loadDecisions(),
+      loadSettings().then(() => setLanguage(savedSettings.ui_language)),
+      loadPlatform()
+    ]).catch(showError);
+    setInterval(() => { if (!document.hidden) refreshStatus(); }, 5000);
+    setInterval(() => { if (!document.hidden && ["dashboard", "logs"].includes(activeView)) loadDecisions(); }, 2000);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) { refreshStatus(); if (["dashboard", "logs"].includes(activeView)) loadDecisions(); }
     });
-    await listen("nullad://request-reload", async () => {
-      reportReload(await call("reload_lists"));
-      loadRuleViewer();
-    });
+    window.addEventListener("beforeunload", () => { if (unlisten) unlisten(); });
   }
-
-  await refreshStatus();
-  await loadDecisions();
-  await loadPendingChanges();
-
-  // The event stream is authoritative, but a slow poll keeps the UI correct if
-  // a push is ever missed.
-  setInterval(refreshStatus, 5000);
-  setInterval(() => {
-    if ($("view-logs").classList.contains("is-active")) loadDecisions();
-  }, 3000);
-}
-
-init();
+  init().catch(showError);
+})(window);

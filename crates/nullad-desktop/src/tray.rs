@@ -1,75 +1,86 @@
-//! The system tray icon and its menu.
-//!
-//! The tray is how a background blocker stays usable: the window can be closed
-//! and filtering continues, with the tray icon as the visible state indicator
-//! and the only way back to the window.
-
+//! Native tray operations use the same serialized lifecycle as IPC.
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, Runtime};
 
-/// Menu item identifiers, shared between construction and event handling.
-mod ids {
-    pub const SHOW: &str = "show";
-    pub const START: &str = "start";
-    pub const STOP: &str = "stop";
-    pub const RELOAD: &str = "reload";
-    pub const QUIT: &str = "quit";
-}
-
-/// Installs the tray icon and its menu.
-///
-/// Returns an error only if Tauri rejects the icon or menu, which would indicate
-/// a packaging problem worth surfacing rather than ignoring.
-pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, ids::SHOW, "Show NullAD", true, None::<&str>)?;
-    let start = MenuItem::with_id(app, ids::START, "Start protection", true, None::<&str>)?;
-    let stop = MenuItem::with_id(app, ids::STOP, "Stop protection", true, None::<&str>)?;
-    let reload = MenuItem::with_id(app, ids::RELOAD, "Reload filter lists", true, None::<&str>)?;
+fn menu<R: Runtime>(app: &AppHandle<R>, language: &str) -> tauri::Result<Menu<R>> {
+    let labels = if language == "en" {
+        [
+            "Show NullAD",
+            "Start protection",
+            "Stop protection",
+            "Reload filter lists",
+            "Quit NullAD",
+        ]
+    } else {
+        [
+            "显示 NullAD",
+            "启动防护",
+            "停止防护",
+            "更新规则",
+            "退出 NullAD",
+        ]
+    };
+    let show = MenuItem::with_id(app, "show", labels[0], true, None::<&str>)?;
+    let start = MenuItem::with_id(app, "start", labels[1], true, None::<&str>)?;
+    let stop = MenuItem::with_id(app, "stop", labels[2], true, None::<&str>)?;
+    let reload = MenuItem::with_id(app, "reload", labels[3], true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", labels[4], true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, ids::QUIT, "Quit NullAD", true, None::<&str>)?;
-
-    let menu = Menu::with_items(
+    Menu::with_items(
         app,
         &[&show, &separator, &start, &stop, &reload, &separator, &quit],
-    )?;
+    )
+}
 
+pub fn set_language<R: Runtime>(app: &AppHandle<R>, language: &str) -> tauri::Result<()> {
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        tray.set_menu(Some(menu(app, language)?))?;
+    }
+    Ok(())
+}
+
+pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+    let language = app
+        .state::<crate::DesktopState>()
+        .app
+        .state()
+        .settings()
+        .ui_language;
+    let icon = app
+        .default_window_icon()
+        .cloned()
+        .ok_or_else(|| tauri::Error::AssetNotFound("tray icon".into()))?;
     TrayIconBuilder::with_id("main-tray")
-        .icon(app.default_window_icon().cloned().unwrap_or_else(|| {
-            // A missing default icon is not fatal; the tray simply has no icon
-            // until one is packaged.
-            tauri::image::Image::new_owned(Vec::new(), 0, 0)
-        }))
+        .icon(icon)
         .tooltip("NullAD")
-        .menu(&menu)
+        .menu(&menu(app, &language)?)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
-            ids::SHOW => show_window(app),
-            ids::START => {
-                // The command surface is the single place that starts servers,
-                // so the tray triggers the same path rather than duplicating it
-                // by emitting an event the UI may not be listening for yet.
-                let _ = app.emit_to_status("nullad://request-start");
+            "show" => show_window(app),
+            "start" | "stop" => {
+                let start = event.id().as_ref() == "start";
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let state = app.state::<crate::DesktopState>();
+                    let result = if start {
+                        crate::runtime::start(&state).await
+                    } else {
+                        crate::runtime::stop(&state).await
+                    };
+                    if let Err(error) = result {
+                        tracing::error!(%error, "tray lifecycle operation failed");
+                    }
+                });
             }
-            ids::STOP => {
-                let _ = app.emit_to_status("nullad://request-stop");
+            "reload" => {
+                let app = app.state::<crate::DesktopState>().app.clone();
+                tauri::async_runtime::spawn_blocking(move || app.reload());
             }
-            ids::RELOAD => {
-                let _ = app.emit_to_status("nullad://request-reload");
-            }
-            ids::QUIT => {
-                // Restore system changes before exiting, so quitting from the
-                // tray cannot strand the machine's proxy settings.
-                if let Some(state) = app.try_state::<crate::DesktopState>() {
-                    state.app.runtime().restore_system_changes();
-                }
-                app.exit(0);
-            }
+            "quit" => crate::request_exit(app),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            // Left click restores the window, which is what every other tray
-            // application does and therefore what users expect.
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
@@ -80,34 +91,13 @@ pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
             }
         })
         .build(app)?;
-
     Ok(())
 }
 
-/// Shows and focuses the main window, creating nothing if it is missing.
 fn show_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
-    }
-}
-
-/// Emits an event to the main window, if it exists.
-///
-/// A small helper so the tray code stays readable; the event is dropped when
-/// the window is not open, which is acceptable because the window re-reads full
-/// state on load rather than relying on events alone.
-trait EmitToStatus<R: Runtime> {
-    fn emit_to_status(&self, event: &str) -> tauri::Result<()>;
-}
-
-impl<R: Runtime> EmitToStatus<R> for AppHandle<R> {
-    fn emit_to_status(&self, event: &str) -> tauri::Result<()> {
-        use tauri::Emitter;
-        if let Some(window) = self.get_webview_window("main") {
-            window.emit(event, ())?;
-        }
-        Ok(())
     }
 }

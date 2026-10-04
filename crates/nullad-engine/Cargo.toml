@@ -13,6 +13,7 @@ authors.workspace = true
 [dependencies]
 aho-corasick.workspace = true
 regex.workspace = true
+regex-syntax.workspace = true
 hashbrown.workspace = true
 foldhash.workspace = true
 smallvec.workspace = true

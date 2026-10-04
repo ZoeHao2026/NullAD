@@ -5,13 +5,10 @@
 //! what keeps the GUI swappable: replacing the web UI means replacing these
 //! bindings and nothing else.
 
-use std::sync::Arc;
 use std::time::Instant;
 
 use nullad_core::{AppSettings, ListSource, ProtectionStatus};
 use nullad_engine::{MatchScratch, Request, ResourceType, RuleSetBuilder};
-use nullad_intercept::dns::resolve_upstream;
-use nullad_intercept::{DnsConfig, DnsServer, ProxyConfig, ProxyServer};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -61,7 +58,10 @@ pub fn get_status(state: State<'_, DesktopState>) -> ProtectionStatus {
 
 /// Returns the most recent decisions, newest first.
 #[tauri::command]
-pub fn recent_decisions(state: State<'_, DesktopState>, limit: Option<usize>) -> Vec<nullad_core::LogEntry> {
+pub fn recent_decisions(
+    state: State<'_, DesktopState>,
+    limit: Option<usize>,
+) -> Vec<nullad_core::LogEntry> {
     state.app.recent_decisions(limit.unwrap_or(100))
 }
 
@@ -139,94 +139,199 @@ pub fn get_settings(state: State<'_, DesktopState>) -> AppSettings {
 
 /// Persists new settings and reloads lists if the list configuration changed.
 #[tauri::command]
-pub fn update_settings(
+pub async fn update_settings(
     state: State<'_, DesktopState>,
-    settings: AppSettings,
-) -> CommandResult<Vec<String>> {
-    let previous = state.app.state().settings();
-    let lists_changed = previous.lists != settings.lists;
-
-    state.app.state().update_settings(settings)?;
-
-    let mut warnings = Vec::new();
-    if lists_changed {
-        warnings = state.app.reload().warnings;
+    patch: nullad_core::SettingsPatch,
+    app_handle: tauri::AppHandle,
+) -> CommandResult<AppSettings> {
+    let app = state.app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state()
+            .modify_settings(|settings| patch.apply_to(settings))?;
+        Ok::<_, CommandError>(app.state().settings())
+    })
+    .await
+    .map_err(|e| CommandError::new(e.to_string()))??;
+    let settings = state.app.state().settings();
+    if let Err(error) = crate::tray::set_language(&app_handle, &settings.ui_language) {
+        tracing::warn!(%error, "tray translation failed");
     }
-    Ok(warnings)
+    Ok(settings)
 }
 
 /// Reloads every enabled list and returns any warnings.
 #[tauri::command]
-pub fn reload_lists(state: State<'_, DesktopState>) -> ReloadResultDto {
-    let outcome = state.app.reload();
-    ReloadResultDto {
-        rules: outcome.total_rules,
-        failures: outcome.total_failures,
-        warnings: outcome.warnings,
-        elapsed_ms: outcome.elapsed_ms,
-    }
+pub async fn reload_lists(state: State<'_, DesktopState>) -> CommandResult<ReloadResultDto> {
+    let app = state.app.clone();
+    tauri::async_runtime::spawn_blocking(move || ReloadResultDto::from(app.reload()))
+        .await
+        .map_err(|error| CommandError::new(error.to_string()))
 }
 
-/// Enables or disables one filter list and reloads.
+/// Enables or disables one filter list using the latest settings snapshot.
 #[tauri::command]
-pub fn set_list_enabled(
+pub async fn set_list_enabled(
     state: State<'_, DesktopState>,
     id: u32,
     enabled: bool,
 ) -> CommandResult<ReloadResultDto> {
-    let mut settings = state.app.state().settings();
-    let Some(entry) = settings.lists.iter_mut().find(|entry| entry.id == id) else {
-        return Err(CommandError::new(format!("no filter list with id {id}")));
-    };
-    entry.enabled = enabled;
-    state.app.state().update_settings(settings)?;
-
-    let outcome = state.app.reload();
-    Ok(ReloadResultDto {
-        rules: outcome.total_rules,
-        failures: outcome.total_failures,
-        warnings: outcome.warnings,
-        elapsed_ms: outcome.elapsed_ms,
+    let app = state.app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if !app
+            .state()
+            .settings()
+            .lists
+            .iter()
+            .any(|entry| entry.id == id)
+        {
+            return Err(CommandError::new(format!("no filter list with id {id}")));
+        }
+        app.state().modify_settings(|settings| {
+            if let Some(entry) = settings.lists.iter_mut().find(|entry| entry.id == id) {
+                entry.enabled = enabled;
+            }
+        })?;
+        Ok(ReloadResultDto::from(app.reload()))
     })
+    .await
+    .map_err(|error| CommandError::new(error.to_string()))?
 }
 
-/// Adds a user-supplied rule as a local list, replacing any previous one.
-///
-/// Custom rules are held as a real list rather than a special case, so they go
-/// through exactly the same parsing and indexing path as everything else.
+/// Saves custom rules off the webview thread, preserving previous file on config failure.
 #[tauri::command]
-pub fn set_custom_rules(state: State<'_, DesktopState>, rules: String) -> CommandResult<ReloadResultDto> {
-    let dir = nullad_host::paths::config_dir()?;
-    let path = dir.join("custom-rules.txt");
+pub async fn set_custom_rules(
+    state: State<'_, DesktopState>,
+    rules: String,
+) -> CommandResult<ReloadResultDto> {
+    let app = state.app.clone();
+    let edits = state.custom_edits.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = edits
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let path = nullad_host::paths::config_dir()?.join("custom-rules.txt");
+        persist_custom_rules(&path, &rules, || {
+            app.state()
+                .modify_settings(|settings| {
+                    update_custom_entry(settings, &path, !rules.trim().is_empty());
+                })
+                .map_err(CommandError::from)
+        })?;
+        Ok(ReloadResultDto::from(app.reload()))
+    })
+    .await
+    .map_err(|error| CommandError::new(error.to_string()))?
+}
 
-    std::fs::write(&path, &rules)
-        .map_err(|e| CommandError::new(format!("cannot write {}: {e}", path.display())))?;
-
-    let mut settings = state.app.state().settings();
+fn update_custom_entry(settings: &mut AppSettings, path: &std::path::Path, enabled: bool) {
     const CUSTOM_ID: u32 = 9_000;
-
-    match settings.lists.iter_mut().find(|entry| entry.id == CUSTOM_ID) {
-        Some(entry) => {
-            entry.enabled = !rules.trim().is_empty();
-        }
-        None => settings.lists.push(nullad_core::ListEntry {
+    let source = ListSource::Local {
+        path: path.display().to_string(),
+    };
+    if let Some(entry) = settings
+        .lists
+        .iter_mut()
+        .find(|entry| entry.id == CUSTOM_ID)
+    {
+        entry.source = source;
+        entry.enabled = enabled;
+    } else {
+        settings.lists.push(nullad_core::ListEntry {
             id: CUSTOM_ID,
             name: "Custom rules".into(),
-            source: ListSource::Local {
-                path: path.display().to_string(),
-            },
-            enabled: !rules.trim().is_empty(),
-        }),
+            source,
+            enabled,
+        });
     }
+}
 
-    state.app.state().update_settings(settings)?;
-    let outcome = state.app.reload();
-    Ok(ReloadResultDto {
-        rules: outcome.total_rules,
-        failures: outcome.total_failures,
-        warnings: outcome.warnings,
-        elapsed_ms: outcome.elapsed_ms,
-    })
+fn persist_custom_rules(
+    path: &std::path::Path,
+    rules: &str,
+    persist: impl FnOnce() -> CommandResult<()>,
+) -> CommandResult<()> {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_BACKUP: AtomicU64 = AtomicU64::new(0);
+
+    // A read error must never be interpreted as an absent previous file.
+    let previous = match std::fs::read(path) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            return Err(CommandError::new(format!(
+                "cannot read {}: {error}",
+                path.display()
+            )));
+        }
+    };
+    let backup = if let Some(bytes) = previous {
+        let (backup, mut file) = loop {
+            let backup = path.with_extension(format!(
+                "txt.previous-{}-{}",
+                std::process::id(),
+                NEXT_BACKUP.fetch_add(1, Ordering::Relaxed)
+            ));
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&backup)
+            {
+                Ok(file) => break (backup, file),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(CommandError::new(format!(
+                        "cannot preserve {}: {error}",
+                        path.display()
+                    )));
+                }
+            }
+        };
+        let preserved = file.write_all(&bytes).and_then(|()| file.sync_all());
+        drop(file);
+        if let Err(error) = preserved {
+            let _ = std::fs::remove_file(&backup);
+            return Err(CommandError::new(format!(
+                "cannot preserve {}: {error}",
+                path.display()
+            )));
+        }
+        Some(backup)
+    } else {
+        None
+    };
+
+    if let Err(error) = nullad_host::journal::atomic_write(path, rules.as_bytes()) {
+        if let Some(backup) = &backup {
+            let _ = std::fs::remove_file(backup);
+        }
+        return Err(CommandError::new(format!(
+            "cannot write {}: {error}",
+            path.display()
+        )));
+    }
+    if let Err(error) = persist() {
+        let restored = match &backup {
+            Some(backup) => std::fs::rename(backup, path),
+            None => std::fs::remove_file(path),
+        };
+        return Err(CommandError::new(match restored {
+            Ok(()) => error.to_string(),
+            Err(restore) => match backup {
+                Some(backup) => format!(
+                    "{error}; cannot restore custom rules: {restore}; previous rules retained at {}",
+                    backup.display()
+                ),
+                None => format!("{error}; cannot remove uncommitted custom rules: {restore}"),
+            },
+        }));
+    }
+    if let Some(backup) = backup {
+        if let Err(error) = std::fs::remove_file(&backup) {
+            tracing::warn!(path = %backup.display(), %error, "could not remove old custom rules backup");
+        }
+    }
+    Ok(())
 }
 
 /// Returns the current contents of the custom rules file.
@@ -241,141 +346,17 @@ pub fn get_custom_rules() -> String {
 /// Starts the configured interceptors.
 #[tauri::command]
 pub async fn start_protection(state: State<'_, DesktopState>) -> CommandResult<Vec<String>> {
-    if state.app.state().is_running() {
-        return Err(CommandError::new("protection is already running"));
-    }
-
-    let settings = state.app.state().settings();
-    let handle = state.app.state().engine_handle();
-    let mut notes = Vec::new();
-
-    state.app.runtime().arm();
-
-    if settings.proxy_enabled {
-        let config = ProxyConfig {
-            listen: format!("127.0.0.1:{}", settings.proxy_port)
-                .parse()
-                .map_err(|e| CommandError::new(format!("invalid proxy port: {e}")))?,
-            ..ProxyConfig::default()
-        };
-
-        let server = ProxyServer::bind(config, handle.clone())
-            .await
-            .map_err(|e| {
-                CommandError::new(format!(
-                    "could not bind the HTTP proxy on port {}: {e}",
-                    settings.proxy_port
-                ))
-            })?;
-        let server = Arc::new(server);
-        let addr = server
-            .local_addr()
-            .map_err(|e| CommandError::new(format!("proxy address unavailable: {e}")))?;
-
-        state
-            .tasks
-            .push(tauri::async_runtime::spawn(async move { server.run().await }));
-        notes.push(format!("HTTP proxy listening on {addr}"));
-    }
-
-    if settings.dns_enabled {
-        let upstream = resolve_upstream(&settings.dns_upstream)
-            .ok_or_else(|| CommandError::new(format!("invalid DNS upstream `{}`", settings.dns_upstream)))?;
-
-        let config = DnsConfig {
-            listen: format!("127.0.0.1:{}", settings.dns_port)
-                .parse()
-                .map_err(|e| CommandError::new(format!("invalid DNS port: {e}")))?,
-            upstream,
-            nxdomain: settings.dns_nxdomain,
-            ..DnsConfig::default()
-        };
-
-        match DnsServer::bind(config, handle.clone()).await {
-            Ok(server) => {
-                let server = Arc::new(server);
-                let addr = server.local_addr().map_err(|e| {
-                    CommandError::new(format!("DNS address unavailable: {e}"))
-                })?;
-                state
-                    .tasks
-                    .push(tauri::async_runtime::spawn(async move { server.run().await }));
-                state.app.runtime().set_dns_active(true);
-                notes.push(format!("DNS sinkhole listening on {addr}"));
-            }
-            Err(err) => {
-                // DNS failing to bind must not stop the proxy, which needs no
-                // privileges and still provides value.
-                notes.push(format!(
-                    "DNS sinkhole unavailable on port {}: {err}. Ports below 1024 need \
-                     administrator rights; try a port above 1024.",
-                    settings.dns_port
-                ));
-            }
-        }
-    }
-
-    if settings.intercept_system_proxy {
-        match nullad_host::SystemProxy::new(format!("127.0.0.1:{}", settings.proxy_port)) {
-            Ok(mut proxy) => match proxy.apply() {
-                Ok(previous) => {
-                    state.app.runtime().set_system_proxy_active(true);
-                    notes.push(format!(
-                        "system proxy routed through NullAD (was: {})",
-                        previous
-                            .server
-                            .as_deref()
-                            .unwrap_or("no proxy configured")
-                    ));
-                }
-                Err(err) => notes.push(format!(
-                    "could not route the system proxy through NullAD: {err}"
-                )),
-            },
-            Err(err) => notes.push(format!("system proxy adapter unavailable: {err}")),
-        }
-    }
-
-    state.app.state().set_running(true);
-    Ok(notes)
+    crate::runtime::start(&state)
+        .await
+        .map_err(CommandError::new)
 }
 
-/// Stops the interceptors and restores any system changes NullAD made.
+/// Stops every task and restores recorded system changes.
 #[tauri::command]
-pub fn stop_protection(state: State<'_, DesktopState>) -> CommandResult<Vec<String>> {
-    let mut notes = Vec::new();
-
-    let stopped = state.tasks.abort_all();
-    if stopped > 0 {
-        notes.push(format!("stopped {stopped} interceptor task(s)"));
-    }
-
-    state.app.runtime().request_stop();
-
-    // Restoring system settings is not optional: leaving the OS pointing at a
-    // proxy that is no longer running would break the user's networking.
-    if state.app.runtime().system_proxy_active() {
-        match nullad_host::SystemProxy::new("127.0.0.1:0") {
-            Ok(mut proxy) => match proxy.revert() {
-                Ok(Some(restored)) => {
-                    state.app.runtime().set_system_proxy_active(false);
-                    notes.push(format!(
-                        "restored the system proxy (now: {})",
-                        restored.server.as_deref().unwrap_or("disabled")
-                    ));
-                }
-                Ok(None) => {
-                    state.app.runtime().set_system_proxy_active(false);
-                }
-                Err(err) => notes.push(format!("could not restore the system proxy: {err}")),
-            },
-            Err(err) => notes.push(format!("system proxy adapter unavailable: {err}")),
-        }
-    }
-
-    state.app.runtime().set_dns_active(false);
-    state.app.state().set_running(false);
-    Ok(notes)
+pub async fn stop_protection(state: State<'_, DesktopState>) -> CommandResult<Vec<String>> {
+    crate::runtime::stop(&state)
+        .await
+        .map_err(CommandError::new)
 }
 
 /// Returns the number of system changes still awaiting restoration.
@@ -393,11 +374,26 @@ pub fn pending_changes() -> Vec<PendingChangeDto> {
 
 /// Restores every system change NullAD has made.
 #[tauri::command]
-pub fn restore_system_changes(state: State<'_, DesktopState>) -> Vec<String> {
-    state.app.runtime().restore_system_changes();
-    state.app.runtime().set_system_proxy_active(false);
-    state.app.runtime().set_dns_active(false);
-    vec!["restored every recorded system change".to_owned()]
+pub async fn restore_system_changes(
+    state: State<'_, DesktopState>,
+) -> CommandResult<nullad_core::RestoreReport> {
+    let _guard = state.tasks.lock().await;
+    let app = state.app.clone();
+    let report =
+        tauri::async_runtime::spawn_blocking(move || app.runtime().restore_system_changes())
+            .await
+            .map_err(|e| CommandError::new(e.to_string()))?;
+    let errors = report
+        .items
+        .iter()
+        .filter_map(|item| item.error.as_deref())
+        .collect::<Vec<_>>()
+        .join("; ");
+    state.app.state().update_recovery_status(
+        state.app.runtime().system_proxy_active(),
+        (!errors.is_empty()).then_some(errors),
+    );
+    Ok(report)
 }
 
 /// Runs a short in-process benchmark and returns the measured numbers.
@@ -406,10 +402,20 @@ pub fn restore_system_changes(state: State<'_, DesktopState>) -> Vec<String> {
 /// documentation, and so a user can confirm the engine is behaving on their own
 /// machine.
 #[tauri::command]
-pub fn benchmark(state: State<'_, DesktopState>, iterations: Option<usize>) -> BenchmarkDto {
+pub async fn benchmark(
+    state: State<'_, DesktopState>,
+    iterations: Option<usize>,
+) -> CommandResult<BenchmarkDto> {
+    let app = state.app.clone();
+    tauri::async_runtime::spawn_blocking(move || benchmark_engine(&app, iterations))
+        .await
+        .map_err(|error| CommandError::new(error.to_string()))
+}
+
+fn benchmark_engine(app: &nullad_core::AppHandle, iterations: Option<usize>) -> BenchmarkDto {
     let iterations = iterations.unwrap_or(20_000).clamp(1_000, 2_000_000);
-    let rule_set = state.app.state().engine.rule_set();
-    let engine = &state.app.state().engine;
+    let rule_set = app.state().engine.rule_set();
+    let engine = &app.state().engine;
 
     // Build a request mix from the rules actually loaded, so the measurement
     // reflects what this installation really does.
@@ -471,7 +477,7 @@ pub fn benchmark(state: State<'_, DesktopState>, iterations: Option<usize>) -> B
 /// Returns platform and capability information for the settings panel.
 #[tauri::command]
 pub fn platform_info(state: State<'_, DesktopState>) -> PlatformInfoDto {
-    let settings = state.app.state().settings();
+    let status = state.app.status();
     PlatformInfoDto {
         platform: nullad_host::platform_description(),
         elevated: nullad_host::has_elevated_privileges(),
@@ -483,8 +489,8 @@ pub fn platform_info(state: State<'_, DesktopState>) -> PlatformInfoDto {
             .unwrap_or_default(),
         rule_count: state.app.state().engine.rule_count(),
         running: state.app.state().is_running(),
-        proxy_port: settings.proxy_port,
-        dns_port: settings.dns_port,
+        proxy_port: status.proxy_port,
+        dns_port: status.dns_port,
     }
 }
 
@@ -647,10 +653,10 @@ pub struct PlatformInfoDto {
     pub rule_count: usize,
     /// Whether protection is running.
     pub running: bool,
-    /// Configured proxy port.
-    pub proxy_port: u16,
-    /// Configured DNS port.
-    pub dns_port: u16,
+    /// Actual bound proxy port.
+    pub proxy_port: Option<u16>,
+    /// Actual bound DNS port.
+    pub dns_port: Option<u16>,
 }
 
 /// Builds a throwaway rule set, used by tests and diagnostics.
@@ -661,9 +667,150 @@ pub fn build_rule_set(list: &str) -> Option<nullad_engine::RuleSet> {
     builder.build().ok()
 }
 
+impl From<nullad_core::LoadOutcome> for ReloadResultDto {
+    fn from(outcome: nullad_core::LoadOutcome) -> Self {
+        Self {
+            rules: outcome.total_rules,
+            failures: outcome.total_failures,
+            warnings: outcome.warnings,
+            elapsed_ms: outcome.elapsed_ms,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct RuleDirectory(std::path::PathBuf);
+
+    impl RuleDirectory {
+        fn new() -> Self {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "nullad-custom-rules-test-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            std::fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+
+        fn path(&self) -> std::path::PathBuf {
+            self.0.join("custom-rules.txt")
+        }
+    }
+
+    impl Drop for RuleDirectory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn existing_custom_id_rebinds_source_without_replacing_other_lists() {
+        let mut settings = AppSettings::default();
+        let other_lists = settings.lists.clone();
+        settings.lists.push(nullad_core::ListEntry {
+            id: 9_000,
+            name: "My custom rules".into(),
+            source: ListSource::Remote {
+                url: "https://example.com/old-list".into(),
+            },
+            enabled: true,
+        });
+        let path = std::path::Path::new("correct/custom-rules.txt");
+        update_custom_entry(&mut settings, path, false);
+        let custom = settings.lists.last().unwrap();
+        assert_eq!(custom.name, "My custom rules");
+        assert_eq!(
+            custom.source,
+            ListSource::Local {
+                path: path.display().to_string()
+            }
+        );
+        assert!(!custom.enabled);
+        assert_eq!(&settings.lists[..other_lists.len()], &other_lists);
+        assert_eq!(
+            settings
+                .lists
+                .iter()
+                .filter(|list| list.id == 9_000)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn custom_rule_persistence_failure_restores_previous_bytes() {
+        let directory = RuleDirectory::new();
+        let path = directory.path();
+        std::fs::write(&path, b"||old.example^\n").unwrap();
+        let error = persist_custom_rules(&path, "||new.example^", || {
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), "||new.example^");
+            Err(CommandError::new("settings write denied"))
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("settings write denied"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"||old.example^\n");
+        assert_eq!(std::fs::read_dir(&directory.0).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn first_custom_rule_persistence_failure_leaves_no_new_file() {
+        let directory = RuleDirectory::new();
+        let path = directory.path();
+        assert!(persist_custom_rules(&path, "||new.example^", || {
+            Err(CommandError::new("settings write denied"))
+        })
+        .is_err());
+        assert!(!path.exists());
+        assert_eq!(std::fs::read_dir(&directory.0).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn failed_custom_rule_restore_retains_a_recoverable_backup() {
+        let directory = RuleDirectory::new();
+        let path = directory.path();
+        std::fs::write(&path, b"previous bytes").unwrap();
+        let error = persist_custom_rules(&path, "new bytes", || {
+            std::fs::remove_file(&path).unwrap();
+            std::fs::create_dir(&path).unwrap();
+            Err(CommandError::new("settings write denied"))
+        })
+        .unwrap_err();
+        let backup = std::fs::read_dir(&directory.0)
+            .unwrap()
+            .filter_map(Result::ok)
+            .find(|entry| entry.path().is_file())
+            .unwrap()
+            .path();
+        assert_eq!(std::fs::read(&backup).unwrap(), b"previous bytes");
+        assert!(error.to_string().contains(&backup.display().to_string()));
+    }
+
+    #[test]
+    fn unreadable_previous_custom_file_aborts_before_persistence() {
+        let directory = RuleDirectory::new();
+        let path = directory.path();
+        std::fs::create_dir(&path).unwrap();
+        assert!(persist_custom_rules(&path, "new bytes", || {
+            panic!("must not publish settings after a read error")
+        })
+        .is_err());
+        assert!(path.is_dir());
+    }
+
+    #[test]
+    fn successful_custom_save_removes_the_temporary_backup() {
+        let directory = RuleDirectory::new();
+        let path = directory.path();
+        std::fs::write(&path, b"previous bytes").unwrap();
+        persist_custom_rules(&path, "new bytes", || Ok(())).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"new bytes");
+        assert_eq!(std::fs::read_dir(&directory.0).unwrap().count(), 1);
+    }
 
     #[test]
     fn resource_type_names_parse() {

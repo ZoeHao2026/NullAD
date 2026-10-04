@@ -37,6 +37,7 @@ bincode = "1.3"
 # --- matching primitives ---
 aho-corasick = "1.1"
 regex = "1.13"
+regex-syntax = "0.8"
 regex-automata = "0.4"
 globset = "0.4"
 idna = "1"

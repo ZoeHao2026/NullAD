@@ -57,8 +57,11 @@ pub mod paths;
 pub mod platform;
 pub mod system_proxy;
 
-pub use dns_config::{DnsConfigurator, DnsSettings};
-pub use journal::{ChangeJournal, JournalEntry, JournalKind};
+#[cfg(test)]
+mod recovery_tests;
+
+pub use dns_config::{DnsConfigurator, DnsMode, DnsSettings};
+pub use journal::{ChangeJournal, JournalEntry, JournalKind, RestoreItem, RestoreReport};
 pub use system_proxy::{ProxySettings, SystemProxy};
 
 /// Errors raised by platform adapters.
@@ -102,4 +105,23 @@ pub fn has_elevated_privileges() -> bool {
 #[must_use]
 pub fn platform_description() -> String {
     format!("{} {}", std::env::consts::OS, std::env::consts::ARCH)
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    pub fn directory() -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let directory = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join(format!(
+                "nullad-test-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+        std::fs::create_dir_all(&directory).unwrap();
+        directory
+    }
 }

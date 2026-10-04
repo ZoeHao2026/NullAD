@@ -25,13 +25,30 @@ pub fn run(
 
     println!();
     println!("url         {}", request.url);
-    println!("host        {}", if request.host.is_empty() { "(unparsed)" } else { &request.host });
+    println!(
+        "host        {}",
+        if request.host.is_empty() {
+            "(unparsed)"
+        } else {
+            &request.host
+        }
+    );
     println!("type        {}", kind);
     if let Some(page) = &request.page_host {
         println!("page        {page}");
-        println!("party       {}", if request.third_party { "third-party" } else { "first-party" });
+        println!(
+            "party       {}",
+            if request.third_party {
+                "third-party"
+            } else {
+                "first-party"
+            }
+        );
     }
-    println!("decision    {}", if result.blocked { "BLOCK" } else { "ALLOW" });
+    println!(
+        "decision    {}",
+        if result.blocked { "BLOCK" } else { "ALLOW" }
+    );
 
     match &result.matched_rule {
         Some(rule) => {
@@ -94,7 +111,10 @@ mod tests {
         assert_eq!(parse_resource_type("JS"), Some(ResourceType::Script));
         assert_eq!(parse_resource_type("img"), Some(ResourceType::Image));
         assert_eq!(parse_resource_type("fetch"), Some(ResourceType::Xhr));
-        assert_eq!(parse_resource_type("MAIN_FRAME"), Some(ResourceType::Document));
+        assert_eq!(
+            parse_resource_type("MAIN_FRAME"),
+            Some(ResourceType::Document)
+        );
         assert_eq!(parse_resource_type("nonsense"), None);
     }
 }

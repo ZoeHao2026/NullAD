@@ -19,8 +19,24 @@ pub fn synthetic_rule_set(count: usize) -> String {
     let mut state = 0x2545_F491_4F6C_DD1Du64;
     let mut out = String::with_capacity(count * 32);
     let labels = [
-        "ads", "track", "pixel", "beacon", "analytics", "cdn", "static", "img", "sync", "tag",
-        "banner", "click", "metric", "collect", "serve", "push", "promo", "telemetry",
+        "ads",
+        "track",
+        "pixel",
+        "beacon",
+        "analytics",
+        "cdn",
+        "static",
+        "img",
+        "sync",
+        "tag",
+        "banner",
+        "click",
+        "metric",
+        "collect",
+        "serve",
+        "push",
+        "promo",
+        "telemetry",
     ];
 
     for i in 0..count {
@@ -29,7 +45,13 @@ pub fn synthetic_rule_set(count: usize) -> String {
         state ^= state << 17;
 
         let label = labels[(state as usize) % labels.len()];
-        let tld = if i % 3 == 0 { "com" } else if i % 3 == 1 { "net" } else { "org" };
+        let tld = if i % 3 == 0 {
+            "com"
+        } else if i % 3 == 1 {
+            "net"
+        } else {
+            "org"
+        };
         match i % 5 {
             0 => out.push_str(&format!("||{label}{i}.example.{tld}^\n")),
             1 => out.push_str(&format!("||{label}-{i}.ads.example.{tld}^\n")),
@@ -64,8 +86,7 @@ fn synthetic_requests(count: usize) -> Vec<Request> {
         let url = if i % 3 == 0 {
             format!("https://unrelated{i}.testsite.example/page/{i}")
         } else {
-            let label = ["ads", "track", "pixel", "beacon", "analytics"]
-                [(state as usize) % 5];
+            let label = ["ads", "track", "pixel", "beacon", "analytics"][(state as usize) % 5];
             format!("https://{label}{i}.example.com/assets/{i}/bundle.js")
         };
 
@@ -334,12 +355,9 @@ pub fn breakdown(engine: &FilterEngine, iterations: usize) -> Breakdown {
         let t = Instant::now();
         generation = generation.wrapping_add(1).max(1);
         candidates.clear();
-        rule_set.substrings().scan(
-            &request.url,
-            &mut seen,
-            generation,
-            &mut candidates,
-        );
+        rule_set
+            .substrings()
+            .scan(&request.url, &mut seen, generation, &mut candidates);
         std::hint::black_box(&candidates);
         automaton += t.elapsed();
 
@@ -395,13 +413,15 @@ pub fn run(
             .map_err(|e| anyhow::anyhow!("failed to build synthetic rule set: {e}"))?;
         let build_time = load_started.elapsed();
 
-        println!(
-            "synthetic rule set: {} rules ({} accepted, {} quarantined), built in {:.1} ms",
-            synthetic_rules,
-            stats.accepted,
-            stats.failed(),
-            build_time.as_secs_f64() * 1000.0
-        );
+        if !json {
+            println!(
+                "synthetic rule set: {} rules ({} accepted, {} quarantined), built in {:.1} ms",
+                synthetic_rules,
+                stats.accepted,
+                stats.failed(),
+                build_time.as_secs_f64() * 1000.0
+            );
+        }
 
         let synthetic_engine = FilterEngine::from_rule_set(rule_set);
         let mut scratch = MatchScratch::new();
@@ -418,7 +438,8 @@ pub fn run(
     // Only run the hot-swap test when a synthetic set was requested, so the
     // default benchmark stays fast.
     if synthetic_rules > 0 && !json {
-        match swap_under_load(synthetic_rules, 10, 4096) {            Ok(swap) => {
+        match swap_under_load(synthetic_rules, 10, 4096) {
+            Ok(swap) => {
                 println!();
                 println!("hot reload under load:");
                 println!(
@@ -429,7 +450,10 @@ pub fn run(
                     "  swap latency: mean {:.1} us, max {:.1} us (budget 50000 us)",
                     swap.mean_swap_us, swap.max_swap_us
                 );
-                println!("  torn or empty rule-set observations: {}", swap.inconsistencies);
+                println!(
+                    "  torn or empty rule-set observations: {}",
+                    swap.inconsistencies
+                );
                 if swap.inconsistencies != 0 {
                     anyhow::bail!("hot reload exposed an inconsistent rule set");
                 }
@@ -447,7 +471,7 @@ pub fn run(
     // The stage breakdown is cheap and informative, so it always runs; the
     // measurement budget is scaled down for small runs.
     if !json {
-        let parts = breakdown(engine, iterations.min(200_000).max(10_000));
+        let parts = breakdown(engine, iterations.clamp(10_000, 200_000));
         println!();
         println!("matching path breakdown (nanoseconds per request):");
         println!("  total               {:>8.1}", parts.total_ns);
@@ -468,7 +492,10 @@ pub fn run(
             println!("      \"rules\": {rules},");
             println!("      \"iterations\": {},", t.iterations);
             println!("      \"total_ms\": {:.3},", t.total.as_secs_f64() * 1000.0);
-            println!("      \"throughput_per_sec\": {:.0},", t.throughput_per_sec());
+            println!(
+                "      \"throughput_per_sec\": {:.0},",
+                t.throughput_per_sec()
+            );
             println!("      \"mean_us\": {},", metric(t.mean()));
             println!("      \"p50_us\": {},", metric(t.p50));
             println!("      \"p95_us\": {},", metric(t.p95));

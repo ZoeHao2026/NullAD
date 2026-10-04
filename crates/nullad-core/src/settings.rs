@@ -1,6 +1,6 @@
 //! Persisted application settings.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +8,7 @@ use nullad_host::journal::ChangeJournal;
 use nullad_host::paths;
 
 /// Where a filter list comes from.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ListSource {
     /// A file shipped with NullAD.
@@ -76,6 +76,8 @@ pub struct AppSettings {
 
     /// Log verbosity: `error`, `warn`, `info`, `debug`, or `trace`.
     pub log_level: String,
+    /// Desktop interface language: Simplified Chinese or English.
+    pub ui_language: String,
 }
 
 /// A filter list entry in the settings file.
@@ -122,6 +124,7 @@ impl Default for AppSettings {
             watch_lists: true,
             notify_on_reload: false,
             log_level: "info".into(),
+            ui_language: "zh-CN".into(),
         }
     }
 }
@@ -156,20 +159,54 @@ impl AppSettings {
 
     /// Saves settings to disk atomically.
     pub fn save(&self) -> Result<(), nullad_host::HostError> {
-        let path = paths::settings_path()?;
-        let temp = path.with_extension("json.tmp");
-        let text = serde_json::to_string_pretty(self)
-            .map_err(|e| nullad_host::HostError::Config(format!("serialize: {e}")))?;
+        self.save_at(&paths::settings_path()?)
+    }
 
-        std::fs::write(&temp, text)
-            .map_err(|e| nullad_host::HostError::Config(format!("{}: {e}", temp.display())))?;
-        std::fs::rename(&temp, &path)
-            .map_err(|e| nullad_host::HostError::Config(format!("{}: {e}", path.display())))?;
+    /// Saves to a specific location for isolated tests and controlled deployments.
+    pub fn save_at(&self, path: &Path) -> Result<(), nullad_host::HostError> {
+        let text = serde_json::to_vec_pretty(self)
+            .map_err(|e| nullad_host::HostError::Config(format!("serialize: {e}")))?;
+        nullad_host::journal::atomic_write(path, &text)
+            .map_err(|e| nullad_host::HostError::Config(format!("{}: {e}", path.display())))
+    }
+
+    /// Validates a proposed configuration before it can be published.
+    pub fn validate(&self) -> Result<(), nullad_host::HostError> {
+        if !matches!(self.ui_language.as_str(), "zh-CN" | "en") {
+            return Err(nullad_host::HostError::Config(
+                "ui_language must be zh-CN or en".into(),
+            ));
+        }
+        if self.proxy_port == 0 || self.dns_port == 0 {
+            return Err(nullad_host::HostError::Config(
+                "listener ports must be between 1 and 65535".into(),
+            ));
+        }
+        if self.intercept_system_proxy && !self.proxy_enabled {
+            return Err(nullad_host::HostError::Config(
+                "system proxy routing requires an enabled proxy".into(),
+            ));
+        }
+        if self.dns_enabled && self.dns_upstream.trim().is_empty() {
+            return Err(nullad_host::HostError::Config(
+                "DNS upstream cannot be empty".into(),
+            ));
+        }
         Ok(())
     }
 
+    /// Listener-affecting fields that require a restart after editing.
+    pub fn same_listener_settings(&self, other: &Self) -> bool {
+        self.proxy_port == other.proxy_port
+            && self.proxy_enabled == other.proxy_enabled
+            && self.dns_port == other.dns_port
+            && self.dns_enabled == other.dns_enabled
+            && self.dns_upstream == other.dns_upstream
+            && self.dns_nxdomain == other.dns_nxdomain
+            && self.intercept_system_proxy == other.intercept_system_proxy
+    }
+
     /// Returns the enabled lists.
-    #[must_use]
     pub fn enabled_lists(&self) -> impl Iterator<Item = &ListEntry> {
         self.lists.iter().filter(|entry| entry.enabled)
     }
@@ -201,6 +238,46 @@ impl AppSettings {
     #[must_use]
     pub fn pending_changes() -> usize {
         ChangeJournal::pending().len()
+    }
+}
+
+/// A settings command updates only the fields actually supplied by its caller.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SettingsPatch {
+    pub proxy_port: Option<u16>,
+    pub proxy_enabled: Option<bool>,
+    pub dns_port: Option<u16>,
+    pub dns_enabled: Option<bool>,
+    pub dns_upstream: Option<String>,
+    pub dns_nxdomain: Option<bool>,
+    pub intercept_system_proxy: Option<bool>,
+    pub watch_lists: Option<bool>,
+    pub notify_on_reload: Option<bool>,
+    pub log_level: Option<String>,
+    pub ui_language: Option<String>,
+}
+
+impl SettingsPatch {
+    pub fn apply_to(self, settings: &mut AppSettings) {
+        macro_rules! field {
+            ($name:ident) => {
+                if let Some(value) = self.$name {
+                    settings.$name = value;
+                }
+            };
+        }
+        field!(proxy_port);
+        field!(proxy_enabled);
+        field!(dns_port);
+        field!(dns_enabled);
+        field!(dns_upstream);
+        field!(dns_nxdomain);
+        field!(intercept_system_proxy);
+        field!(watch_lists);
+        field!(notify_on_reload);
+        field!(log_level);
+        field!(ui_language);
     }
 }
 

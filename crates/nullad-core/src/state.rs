@@ -2,12 +2,13 @@
 
 use std::collections::VecDeque;
 use std::net::IpAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use nullad_api::{LogEntry, ProtectionState, RuleSetStatsDto, StatsSnapshotDto, StatusReport};
 use nullad_engine::FilterEngine;
-use nullad_host::journal::{ChangeJournal, JournalKind};
+use nullad_host::journal::{ChangeJournal, JournalKind, RestoreItem, RestoreReport};
 use nullad_host::{dns_config::DnsConfigurator, system_proxy::SystemProxy};
 use nullad_intercept::{Decision, DecisionSink, EngineHandle, InterceptStats};
 
@@ -121,6 +122,37 @@ pub struct AppState {
     pub lists: Mutex<Vec<ListSummary>>,
     /// Whether protection is currently active.
     running: AtomicBool,
+    loader: ListLoader,
+    reload_lock: Mutex<()>,
+    settings_revision: AtomicU64,
+    settings_path: Option<PathBuf>,
+    pending_journal_path: Option<PathBuf>,
+    runtime_status: Mutex<RuntimeStatus>,
+}
+
+#[derive(Debug)]
+struct RuntimeStatus {
+    protection: ProtectionState,
+    proxy_port: Option<u16>,
+    dns_port: Option<u16>,
+    system_proxy: bool,
+    last_error: Option<String>,
+    recovery_error: Option<String>,
+    started_settings: Option<AppSettings>,
+}
+
+impl Default for RuntimeStatus {
+    fn default() -> Self {
+        Self {
+            protection: ProtectionState::Stopped,
+            proxy_port: None,
+            dns_port: None,
+            system_proxy: false,
+            last_error: None,
+            recovery_error: None,
+            started_settings: None,
+        }
+    }
 }
 
 /// A filter list as the UI sees it.
@@ -146,6 +178,14 @@ impl AppState {
     /// Creates state with an empty engine, then loads the configured lists.
     #[must_use]
     pub fn bootstrap(settings: AppSettings) -> Self {
+        Self::bootstrap_with_resource_dir(settings, None)
+    }
+
+    /// Loads bundled lists from the installed Tauri resource directory.
+    pub fn bootstrap_with_resource_dir(
+        settings: AppSettings,
+        resource_dir: Option<PathBuf>,
+    ) -> Self {
         let engine = Arc::new(FilterEngine::new());
         let decisions = Arc::new(DecisionLog::new(DECISION_LOG_CAPACITY));
 
@@ -157,6 +197,12 @@ impl AppState {
             last_load: Mutex::new(None),
             lists: Mutex::new(Vec::new()),
             running: AtomicBool::new(false),
+            loader: ListLoader::with_resource_dir(resource_dir),
+            reload_lock: Mutex::new(()),
+            settings_revision: AtomicU64::new(0),
+            settings_path: None,
+            pending_journal_path: None,
+            runtime_status: Mutex::new(RuntimeStatus::default()),
         };
 
         state.reload_lists();
@@ -172,16 +218,32 @@ impl AppState {
         }
     }
 
-    /// Replaces the settings and persists them.
+    /// Replaces settings after persistence succeeds. Prefer patches for UI edits.
     pub fn update_settings(&self, settings: AppSettings) -> Result<(), nullad_host::HostError> {
-        {
-            let mut guard = match self.settings.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            *guard = settings;
+        self.modify_settings(|current| *current = settings)
+    }
+
+    /// Applies a modification to the latest snapshot under the settings lock.
+    /// A failed write leaves both the published settings and revision unchanged.
+    pub fn modify_settings(
+        &self,
+        modify: impl FnOnce(&mut AppSettings),
+    ) -> Result<(), nullad_host::HostError> {
+        let mut current = self
+            .settings
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut proposed = current.clone();
+        modify(&mut proposed);
+        proposed.validate()?;
+        if let Some(path) = &self.settings_path {
+            proposed.save_at(path)?;
+        } else {
+            proposed.save()?;
         }
-        self.settings().save()
+        *current = proposed;
+        self.settings_revision.fetch_add(1, Ordering::AcqRel);
+        Ok(())
     }
 
     /// Builds a fresh rule set from the enabled lists and installs it.
@@ -190,33 +252,43 @@ impl AppState {
     /// continuously across a reload: requests already in flight finish against
     /// the old rule set and new ones see the new one.
     pub fn reload_lists(&self) -> LoadOutcome {
-        let settings = self.settings();
-        let loader = ListLoader::new();
-        let outcome = loader.load(&settings);
-
+        let _reload = self
+            .reload_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (settings, revision) = {
+            let settings = self
+                .settings
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            (
+                settings.clone(),
+                self.settings_revision.load(Ordering::Acquire),
+            )
+        };
+        let mut outcome = self.loader.load(&settings);
+        // Hold the settings lock through publication so an edit cannot race this check.
+        let _settings = self
+            .settings
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if revision != self.settings_revision.load(Ordering::Acquire) {
+            outcome.warnings.push(
+                "settings changed during loading; the obsolete reload was not installed".into(),
+            );
+            return outcome;
+        }
         if let Some(rule_set) = outcome.rule_set.clone() {
-            // `Arc::try_unwrap` would move it, but we cannot rely on being the
-            // only holder, so the swap takes the shared handle and the engine
-            // wraps it once more. The clone is an `Arc` bump, not a copy of the
-            // compiled rules.
             self.engine.swap_shared(rule_set);
         }
-
-        {
-            let mut lists = match self.lists.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            *lists = outcome.summaries.clone();
-        }
-        {
-            let mut last = match self.last_load.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            *last = Some(outcome.clone());
-        }
-
+        *self
+            .lists
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = outcome.summaries.clone();
+        *self
+            .last_load
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(outcome.clone());
         outcome
     }
 
@@ -232,13 +304,72 @@ impl AppState {
 
     /// Marks protection as running.
     pub fn set_running(&self, running: bool) {
-        self.running.store(running, Ordering::Relaxed);
+        let state = if running {
+            ProtectionState::Running
+        } else {
+            ProtectionState::Stopped
+        };
+        self.set_runtime_status(state, None, None, false, None);
     }
 
     /// Returns `true` when protection is active.
     #[must_use]
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::Relaxed)
+    }
+
+    /// Publishes actual listener and routing state, separate from persisted settings.
+    pub fn set_runtime_status(
+        &self,
+        protection: ProtectionState,
+        proxy_port: Option<u16>,
+        dns_port: Option<u16>,
+        system_proxy: bool,
+        last_error: Option<String>,
+    ) {
+        let settings = (protection == ProtectionState::Starting).then(|| self.settings());
+        let mut runtime = self
+            .runtime_status
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(settings) = settings {
+            runtime.started_settings = Some(settings);
+        }
+        if matches!(
+            protection,
+            ProtectionState::Stopped | ProtectionState::Failed
+        ) {
+            runtime.started_settings = None;
+        }
+        runtime.protection = protection;
+        runtime.proxy_port = proxy_port;
+        runtime.dns_port = dns_port;
+        runtime.system_proxy = system_proxy;
+        runtime.last_error = last_error;
+        runtime.recovery_error = None;
+        self.running.store(
+            protection.is_active() || protection == ProtectionState::Starting,
+            Ordering::Relaxed,
+        );
+    }
+
+    /// Publishes a recovery outcome without replaying an earlier lifecycle snapshot.
+    /// Listener state and its error can change concurrently while recovery runs.
+    pub fn update_recovery_status(&self, system_proxy: bool, recovery_error: Option<String>) {
+        let mut runtime = self
+            .runtime_status
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        runtime.system_proxy = system_proxy;
+        runtime.recovery_error = recovery_error;
+    }
+
+    /// Records the exact snapshot used by the desktop startup transaction.
+    pub fn capture_startup_settings(&self, settings: AppSettings) {
+        self.runtime_status
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .started_settings = Some(settings);
     }
 
     /// Renders the current status for a UI.
@@ -252,14 +383,46 @@ impl AppState {
             Err(poisoned) => poisoned.into_inner().clone(),
         };
 
-        let state = if self.is_running() {
-            ProtectionState::Running
-        } else {
-            ProtectionState::Stopped
-        };
+        let runtime = self
+            .runtime_status
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let needs_restart = runtime
+            .started_settings
+            .as_ref()
+            .is_some_and(|started| !started.same_listener_settings(&settings));
 
+        let journal = self
+            .pending_journal_path
+            .as_ref()
+            .map_or_else(ChangeJournal::load, |path| {
+                ChangeJournal::load_at(path.clone())
+            });
+        let (pending_changes, journal_error) = match journal {
+            Ok(journal) => (journal.entries().len(), None),
+            Err(error) => (
+                0,
+                Some(format!(
+                    "system recovery journal could not be read: {error}"
+                )),
+            ),
+        };
+        let errors = [
+            runtime.last_error.clone(),
+            runtime
+                .recovery_error
+                .as_ref()
+                .map(|error| format!("recovery: {error}")),
+            journal_error,
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+        let last_error = (!errors.is_empty()).then(|| errors.join("; "));
+
+        let observed_proxy = nullad_host::platform::read_proxy().ok();
         ProtectionStatus {
-            protection: state,
+            protection: runtime.protection,
             engine: StatsSnapshotDto::from(engine_stats),
             rule_set: RuleSetStatsDto::from(nullad_engine::RuleSetStats {
                 rules: rule_stats.rules,
@@ -282,9 +445,16 @@ impl AppState {
                 dns_failed: self.intercept_stats.dns_failed(),
             },
             lists,
-            proxy_port: Some(settings.proxy_port),
-            dns_port: settings.dns_enabled.then_some(settings.dns_port),
-            intercept_system_proxy: settings.intercept_system_proxy,
+            proxy_port: runtime.proxy_port,
+            proxy_address: runtime.proxy_port.map(|port| format!("127.0.0.1:{port}")),
+            dns_address: runtime.dns_port.map(|port| format!("127.0.0.1:{port}")),
+            dns_port: runtime.dns_port,
+            intercept_system_proxy: runtime.system_proxy,
+            system_proxy_enabled: observed_proxy.as_ref().map(|proxy| proxy.enabled),
+            system_proxy_server: observed_proxy.and_then(|proxy| proxy.server),
+            last_error,
+            pending_changes,
+            needs_restart,
         }
     }
 
@@ -317,12 +487,21 @@ pub struct ProtectionStatus {
     pub intercept: InterceptStatus,
     /// Applied filter lists.
     pub lists: Vec<ListSummary>,
-    /// Configured proxy port.
+    /// Actual bound proxy port.
     pub proxy_port: Option<u16>,
-    /// Configured DNS port, when DNS is enabled.
+    /// Actual bound loopback listener addresses, absent while stopped.
+    pub proxy_address: Option<String>,
+    pub dns_address: Option<String>,
+    /// Actual bound DNS port.
     pub dns_port: Option<u16>,
     /// Whether the system proxy is routed through NullAD.
     pub intercept_system_proxy: bool,
+    /// Observed OS proxy state; None means it could not be read.
+    pub system_proxy_enabled: Option<bool>,
+    pub system_proxy_server: Option<String>,
+    pub last_error: Option<String>,
+    pub pending_changes: usize,
+    pub needs_restart: bool,
 }
 
 /// Per-interceptor counters for the dashboard.
@@ -456,48 +635,63 @@ impl RunningProtection {
         self.dns_active.load(Ordering::Relaxed)
     }
 
-    /// Restores every system change NullAD made, using the journal.
-    ///
-    /// This is deliberately best-effort and never returns an error: it runs on
-    /// shutdown, where the most important property is that it always attempts
-    /// both restores and reports what it could not do, rather than aborting
-    /// after the first failure and leaving the system modified.
-    pub fn restore_system_changes(&self) {
+    /// Attempts all pending restores and retains failed entries for the next run.
+    pub fn restore_system_changes(&self) -> RestoreReport {
+        let mut report = RestoreReport::default();
         match SystemProxy::new("127.0.0.1:0") {
             Ok(mut proxy) => match proxy.revert() {
-                Ok(Some(restored)) => {
-                    tracing::info!(?restored, "restored the system proxy");
+                Ok(Some(_)) => {
+                    self.set_system_proxy_active(false);
+                    report.items.push(RestoreItem {
+                        kind: JournalKind::SystemProxy,
+                        restored: true,
+                        error: None,
+                    });
                 }
                 Ok(None) => {}
-                Err(err) => tracing::warn!(error = %err, "could not restore the system proxy"),
+                Err(error) => report.items.push(RestoreItem {
+                    kind: JournalKind::SystemProxy,
+                    restored: false,
+                    error: Some(error.to_string()),
+                }),
             },
-            Err(err) => tracing::warn!(error = %err, "could not open the system proxy adapter"),
+            Err(error) => report.items.push(RestoreItem {
+                kind: JournalKind::SystemProxy,
+                restored: false,
+                error: Some(error.to_string()),
+            }),
         }
-
         let local: IpAddr = "127.0.0.1".parse().expect("valid literal address");
         match DnsConfigurator::new(local) {
             Ok(mut dns) => match dns.revert() {
-                Ok(Some(restored)) => tracing::info!(?restored, "restored the system resolver"),
+                Ok(Some(_)) => report.items.push(RestoreItem {
+                    kind: JournalKind::DnsResolver,
+                    restored: true,
+                    error: None,
+                }),
                 Ok(None) => {}
-                Err(err) => tracing::warn!(error = %err, "could not restore the system resolver"),
+                Err(error) => report.items.push(RestoreItem {
+                    kind: JournalKind::DnsResolver,
+                    restored: false,
+                    error: Some(error.to_string()),
+                }),
             },
-            Err(err) => tracing::warn!(error = %err, "could not open the resolver adapter"),
+            Err(error) => report.items.push(RestoreItem {
+                kind: JournalKind::DnsResolver,
+                restored: false,
+                error: Some(error.to_string()),
+            }),
         }
-
-        // Only clear the journal once both restores have been attempted. An
-        // entry that could not be applied stays recorded, so the next run still
-        // offers to fix it.
-        match ChangeJournal::load() {
-            Ok(mut journal) => {
-                if let Err(err) = journal.clear_kind(JournalKind::SystemProxy) {
-                    tracing::warn!(error = %err, "could not clear the system proxy journal entry");
-                }
-                if let Err(err) = journal.clear_kind(JournalKind::DnsResolver) {
-                    tracing::warn!(error = %err, "could not clear the resolver journal entry");
-                }
-            }
-            Err(err) => tracing::warn!(error = %err, "could not open the change journal"),
-        }
+        report.pending_changes = ChangeJournal::load()
+            .map(|journal| journal.entries().len())
+            .unwrap_or_else(|_| {
+                report
+                    .items
+                    .iter()
+                    .filter(|item| item.error.is_some())
+                    .count()
+            });
+        report
     }
 }
 
@@ -505,6 +699,25 @@ impl RunningProtection {
 mod tests {
     use super::*;
     use nullad_intercept::DecisionSource;
+
+    fn test_state(settings: AppSettings) -> AppState {
+        let directory = crate::test_support::directory();
+        AppState {
+            engine: Arc::new(FilterEngine::new()),
+            settings: Mutex::new(settings),
+            decisions: Arc::new(DecisionLog::new(10)),
+            intercept_stats: Arc::new(InterceptStats::new()),
+            last_load: Mutex::new(None),
+            lists: Mutex::new(Vec::new()),
+            running: AtomicBool::new(false),
+            loader: ListLoader::new(),
+            reload_lock: Mutex::new(()),
+            settings_revision: AtomicU64::new(0),
+            settings_path: Some(directory.join("settings.json")),
+            pending_journal_path: Some(directory.join("journal.json")),
+            runtime_status: Mutex::new(RuntimeStatus::default()),
+        }
+    }
 
     fn decision(host: &str, blocked: bool) -> Decision {
         Decision {
@@ -589,15 +802,7 @@ mod tests {
 
     #[test]
     fn engine_handle_shares_counters_and_the_log() {
-        let state = AppState {
-            engine: Arc::new(FilterEngine::new()),
-            settings: Mutex::new(AppSettings::default()),
-            decisions: Arc::new(DecisionLog::new(10)),
-            intercept_stats: Arc::new(InterceptStats::new()),
-            last_load: Mutex::new(None),
-            lists: Mutex::new(Vec::new()),
-            running: AtomicBool::new(false),
-        };
+        let state = test_state(AppSettings::default());
 
         let handle = state.engine_handle();
         handle.decide(
@@ -613,15 +818,7 @@ mod tests {
 
     #[test]
     fn status_reports_a_stopped_engine_by_default() {
-        let state = AppState {
-            engine: Arc::new(FilterEngine::new()),
-            settings: Mutex::new(AppSettings::default()),
-            decisions: Arc::new(DecisionLog::new(10)),
-            intercept_stats: Arc::new(InterceptStats::new()),
-            last_load: Mutex::new(None),
-            lists: Mutex::new(Vec::new()),
-            running: AtomicBool::new(false),
-        };
+        let state = test_state(AppSettings::default());
 
         let status = state.status();
         assert_eq!(status.protection, ProtectionState::Stopped);
@@ -629,5 +826,252 @@ mod tests {
 
         state.set_running(true);
         assert_eq!(state.status().protection, ProtectionState::Running);
+    }
+    #[test]
+    fn failed_persistence_does_not_publish_settings() {
+        let mut state = test_state(AppSettings::default());
+        state.settings_path = Some(
+            crate::test_support::directory()
+                .join("missing-parent")
+                .join("settings.json"),
+        );
+        let before = state.settings();
+        assert!(state
+            .modify_settings(|settings| settings.ui_language = "en".into())
+            .is_err());
+        assert_eq!(state.settings(), before);
+        assert_eq!(state.settings_revision.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn concurrent_patches_preserve_unrelated_fields_and_persist_latest_settings() {
+        let state = Arc::new(test_state(AppSettings::default()));
+        std::thread::scope(|scope| {
+            let first = Arc::clone(&state);
+            scope.spawn(move || {
+                first
+                    .modify_settings(|settings| settings.ui_language = "en".into())
+                    .unwrap()
+            });
+            let second = Arc::clone(&state);
+            scope.spawn(move || {
+                second
+                    .modify_settings(|settings| settings.proxy_port = 9090)
+                    .unwrap()
+            });
+        });
+        let settings = state.settings();
+        assert_eq!(settings.ui_language, "en");
+        assert_eq!(settings.proxy_port, 9090);
+        let persisted: AppSettings =
+            serde_json::from_slice(&std::fs::read(state.settings_path.as_ref().unwrap()).unwrap())
+                .unwrap();
+        assert_eq!(persisted, settings);
+    }
+
+    #[test]
+    fn runtime_status_reports_bound_ports_and_restart_requirement() {
+        let state = test_state(AppSettings::default());
+        assert_eq!(state.status().proxy_port, None);
+        state.set_runtime_status(ProtectionState::Starting, None, None, false, None);
+        state.set_runtime_status(
+            ProtectionState::Degraded,
+            Some(8080),
+            None,
+            true,
+            Some("DNS unavailable".into()),
+        );
+        state
+            .modify_settings(|settings| {
+                settings.proxy_port = 9090;
+                settings.ui_language = "en".into();
+            })
+            .unwrap();
+        let status = state.status();
+        assert_eq!(status.proxy_port, Some(8080));
+        assert_eq!(status.dns_port, None);
+        assert_eq!(status.protection, ProtectionState::Degraded);
+        assert!(status.intercept_system_proxy && status.needs_restart);
+        assert_eq!(status.last_error.as_deref(), Some("DNS unavailable"));
+        state.set_runtime_status(ProtectionState::Stopped, None, None, false, None);
+        assert!(!state.status().needs_restart);
+    }
+
+    #[test]
+    fn recovery_after_listener_failure_preserves_the_current_failed_state() {
+        let state = test_state(AppSettings::default());
+        state.set_runtime_status(ProtectionState::Running, Some(8080), Some(5353), true, None);
+        // The listener finishes while a manually requested recovery is in flight.
+        state.set_runtime_status(
+            ProtectionState::Failed,
+            None,
+            None,
+            true,
+            Some("DNS listener failed".into()),
+        );
+        state.update_recovery_status(false, Some("snapshot still pending".into()));
+        let status = state.status();
+        assert_eq!(status.protection, ProtectionState::Failed);
+        assert_eq!(status.proxy_port, None);
+        assert_eq!(status.dns_port, None);
+        assert!(!status.intercept_system_proxy);
+        assert!(!state.is_running());
+        assert_eq!(
+            status.last_error.as_deref(),
+            Some("DNS listener failed; recovery: snapshot still pending")
+        );
+
+        // A successful retry clears the recovery error but retains why the
+        // listeners stopped. It must not bring stale ports back into the UI.
+        state.update_recovery_status(false, None);
+        let status = state.status();
+        assert_eq!(status.protection, ProtectionState::Failed);
+        assert_eq!((status.proxy_port, status.dns_port), (None, None));
+        assert_eq!(status.last_error.as_deref(), Some("DNS listener failed"));
+    }
+
+    #[test]
+    fn listener_failure_after_recovery_remains_the_latest_lifecycle_state() {
+        let state = test_state(AppSettings::default());
+        state.set_runtime_status(ProtectionState::Running, Some(8080), Some(5353), true, None);
+        state.update_recovery_status(false, None);
+        let status = state.status();
+        assert_eq!(status.protection, ProtectionState::Running);
+        assert_eq!(
+            (status.proxy_port, status.dns_port),
+            (Some(8080), Some(5353))
+        );
+        assert!(state.is_running());
+        assert!(!status.intercept_system_proxy);
+
+        state.set_runtime_status(
+            ProtectionState::Failed,
+            None,
+            None,
+            false,
+            Some("HTTP listener failed".into()),
+        );
+        let status = state.status();
+        assert_eq!(status.protection, ProtectionState::Failed);
+        assert_eq!((status.proxy_port, status.dns_port), (None, None));
+        assert_eq!(status.last_error.as_deref(), Some("HTTP listener failed"));
+        assert!(!state.is_running());
+    }
+
+    #[test]
+    fn recovery_preserves_started_listener_settings_and_degraded_error() {
+        let state = test_state(AppSettings::default());
+        state.set_runtime_status(ProtectionState::Starting, None, None, false, None);
+        state.set_runtime_status(
+            ProtectionState::Degraded,
+            Some(8080),
+            None,
+            true,
+            Some("DNS unavailable".into()),
+        );
+        state
+            .modify_settings(|settings| settings.proxy_port = 9090)
+            .unwrap();
+        state.update_recovery_status(false, Some("restore unavailable".into()));
+        let status = state.status();
+        assert_eq!(status.protection, ProtectionState::Degraded);
+        assert_eq!(status.proxy_port, Some(8080));
+        assert!(status.needs_restart && state.is_running());
+        assert_eq!(
+            status.last_error.as_deref(),
+            Some("DNS unavailable; recovery: restore unavailable")
+        );
+        state.update_recovery_status(false, None);
+        let status = state.status();
+        assert!(status.needs_restart);
+        assert_eq!(status.last_error.as_deref(), Some("DNS unavailable"));
+    }
+
+    #[test]
+    fn obsolete_reload_cannot_restore_a_disabled_list() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/list", listener.local_addr().unwrap());
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut request = [0u8; 4096];
+            assert!(socket.read(&mut request).unwrap() > 0);
+            started_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+            let body = "||ads.example.com^\n";
+            write!(
+                socket,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+        });
+        let settings = AppSettings {
+            lists: vec![crate::ListEntry {
+                id: 7,
+                name: "remote".into(),
+                source: crate::ListSource::Remote { url },
+                enabled: true,
+            }],
+            ..AppSettings::default()
+        };
+        let state = Arc::new(test_state(settings));
+        let loader_state = Arc::clone(&state);
+        let reload = std::thread::spawn(move || loader_state.reload_lists());
+        started_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        state
+            .modify_settings(|settings| settings.lists[0].enabled = false)
+            .unwrap();
+        release_tx.send(()).unwrap();
+        let obsolete = reload.join().unwrap();
+        server.join().unwrap();
+        assert!(obsolete
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("obsolete")));
+        assert_eq!(state.engine.rule_count(), 0);
+        let disabled = state.reload_lists();
+        assert!(disabled.rule_set.is_some());
+        assert_eq!(state.engine.rule_count(), 0);
+    }
+    #[test]
+    fn corrupt_recovery_journal_is_visible_and_preserved() {
+        let state = test_state(AppSettings::default());
+        let path = state.pending_journal_path.as_ref().unwrap();
+        std::fs::write(path, "{broken").unwrap();
+        let status = state.status();
+        assert!(status
+            .last_error
+            .unwrap()
+            .contains("recovery journal could not be read"));
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "{broken");
+    }
+
+    #[test]
+    fn disabling_all_lists_installs_an_empty_rule_set() {
+        let mut settings = AppSettings::default();
+        let path = crate::test_support::directory().join("list.txt");
+        std::fs::write(&path, "||ads.example.com^\n").unwrap();
+        settings.lists = vec![crate::ListEntry {
+            id: 1,
+            name: "local".into(),
+            source: crate::ListSource::Local {
+                path: path.display().to_string(),
+            },
+            enabled: true,
+        }];
+        let state = test_state(settings);
+        state.reload_lists();
+        assert_eq!(state.engine.rule_count(), 1);
+        state
+            .modify_settings(|settings| settings.lists[0].enabled = false)
+            .unwrap();
+        state.reload_lists();
+        assert_eq!(state.engine.rule_count(), 0);
     }
 }

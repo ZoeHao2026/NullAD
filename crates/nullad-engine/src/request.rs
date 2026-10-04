@@ -204,7 +204,10 @@ mod tests {
 
     #[test]
     fn extracts_host_from_urls() {
-        assert_eq!(extract_host("http://example.com/x").as_deref(), Some("example.com"));
+        assert_eq!(
+            extract_host("http://example.com/x").as_deref(),
+            Some("example.com")
+        );
         assert_eq!(
             extract_host("https://ads.example.com:8080/x?y=1").as_deref(),
             Some("ads.example.com")
@@ -224,7 +227,10 @@ mod tests {
 
     #[test]
     fn bare_hostname_is_accepted() {
-        assert_eq!(extract_host("ads.example.com").as_deref(), Some("ads.example.com"));
+        assert_eq!(
+            extract_host("ads.example.com").as_deref(),
+            Some("ads.example.com")
+        );
     }
 
     #[test]

@@ -900,9 +900,8 @@ mod tests {
 
     #[test]
     fn comments_and_blanks_are_skipped() {
-        let (rules, stats) = RuleParser::new().parse_list(
-            "! a comment\n\n[Adblock Plus 2.0]\n||ads.com^\n   \n",
-        );
+        let (rules, stats) =
+            RuleParser::new().parse_list("! a comment\n\n[Adblock Plus 2.0]\n||ads.com^\n   \n");
         assert_eq!(rules.len(), 1);
         assert_eq!(stats.accepted, 1);
         assert_eq!(stats.failed(), 0);
@@ -920,8 +919,7 @@ mod tests {
 
     #[test]
     fn bad_rules_are_quarantined_not_fatal() {
-        let (rules, stats) =
-            RuleParser::new().parse_list("/(bad/\n||good.com^\n$domain=\n");
+        let (rules, stats) = RuleParser::new().parse_list("/(bad/\n||good.com^\n$domain=\n");
         assert_eq!(rules.len(), 1);
         assert_eq!(stats.failed(), 2);
         assert_eq!(rules[0].source_line, 2);

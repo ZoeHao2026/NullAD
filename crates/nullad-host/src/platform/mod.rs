@@ -60,3 +60,15 @@ pub fn read_dns_settings() -> Result<DnsSettings> {
 pub fn write_dns_settings(settings: &DnsSettings) -> Result<()> {
     write_dns(settings)
 }
+
+/// Restores captured settings, refusing ambiguous legacy Windows snapshots.
+pub fn restore_proxy_settings(settings: &ProxySettings) -> Result<()> {
+    #[cfg(windows)]
+    {
+        windows::restore_proxy(settings)
+    }
+    #[cfg(not(windows))]
+    {
+        write_proxy(settings)
+    }
+}

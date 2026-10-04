@@ -23,6 +23,8 @@ pub enum ProtectionState {
     Stopped,
     /// Starting up; interceptors are binding.
     Starting,
+    /// Stop requested; listeners and connections are draining.
+    Stopping,
     /// Running and filtering traffic.
     Running,
     /// Running but degraded, for example because an interceptor failed to bind.

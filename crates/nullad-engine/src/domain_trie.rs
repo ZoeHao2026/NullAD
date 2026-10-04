@@ -33,8 +33,7 @@ impl DomainTrie {
     /// Creates an empty trie.
     #[must_use]
     pub fn new() -> Self {
-        let mut nodes = Vec::with_capacity(1);
-        nodes.push(Node::default());
+        let nodes = vec![Node::default()];
         Self { nodes, len: 0 }
     }
 

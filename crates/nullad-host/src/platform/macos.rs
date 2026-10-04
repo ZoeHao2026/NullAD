@@ -36,7 +36,10 @@ fn run(program: &str, args: &[&str]) -> Result<String> {
         || combined.contains("permission denied")
         || combined.contains("must be run as root")
     {
-        return Err(HostError::PermissionDenied(format!("{program} {}", args.join(" "))));
+        return Err(HostError::PermissionDenied(format!(
+            "{program} {}",
+            args.join(" ")
+        )));
     }
 
     Err(HostError::Platform(format!(
@@ -82,7 +85,11 @@ fn active_service() -> Result<String> {
 pub fn read_proxy() -> Result<ProxySettings> {
     let service = active_service()?;
     let web = run("/usr/sbin/networksetup", &["-getwebproxy", &service])?;
-    let bypass = run("/usr/sbin/networksetup", &["-getproxybypassdomains", &service]).ok();
+    let bypass = run(
+        "/usr/sbin/networksetup",
+        &["-getproxybypassdomains", &service],
+    )
+    .ok();
     let auto = run("/usr/sbin/networksetup", &["-getautoproxyurl", &service]).ok();
 
     let mut enabled = false;
@@ -126,6 +133,7 @@ pub fn read_proxy() -> Result<ProxySettings> {
         server,
         bypass,
         auto_config_url,
+        windows_registry: None,
     })
 }
 
@@ -159,7 +167,10 @@ pub fn write_proxy(settings: &ProxySettings) -> Result<()> {
             run("/usr/sbin/networksetup", &args)?;
         }
     } else {
-        run("/usr/sbin/networksetup", &["-setwebproxystate", &service, "off"])?;
+        run(
+            "/usr/sbin/networksetup",
+            &["-setwebproxystate", &service, "off"],
+        )?;
         run(
             "/usr/sbin/networksetup",
             &["-setsecurewebproxystate", &service, "off"],
@@ -168,7 +179,10 @@ pub fn write_proxy(settings: &ProxySettings) -> Result<()> {
 
     match &settings.auto_config_url {
         Some(url) => {
-            run("/usr/sbin/networksetup", &["-setautoproxyurl", &service, url])?;
+            run(
+                "/usr/sbin/networksetup",
+                &["-setautoproxyurl", &service, url],
+            )?;
         }
         None => {
             // Clearing the PAC URL matters: otherwise a PAC script would override
@@ -212,6 +226,8 @@ pub fn read_dns() -> Result<DnsSettings> {
     Ok(DnsSettings {
         entries: vec![ResolverEntry {
             interface: service,
+            mode: None,
+            interface_index: None,
             servers,
         }],
     })

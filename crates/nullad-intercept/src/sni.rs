@@ -13,12 +13,15 @@
 //!   passed through and counted, never silently misreported as clean.
 
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::watch;
+use tokio::task::JoinSet;
 
+use crate::lifecycle::{stop_children, stopped};
 use crate::prefixed::PrefixedIo;
 use crate::{DecisionSource, EngineHandle};
 
@@ -36,6 +39,7 @@ const MAX_CLIENT_HELLO: usize = 16 * 1024;
 
 /// How long to wait for a client to send its ClientHello.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_CONNECTIONS: usize = 256;
 
 /// Configuration for the SNI listener.
 #[derive(Debug, Clone)]
@@ -72,17 +76,21 @@ pub enum ClientHello {
 /// Accepts TCP connections and filters them by their TLS SNI.
 #[derive(Debug)]
 pub struct SniListener {
-    listener: TcpListener,
+    listener: Mutex<Option<TcpListener>>,
+    address: SocketAddr,
     handle: EngineHandle,
     config: SniConfig,
 }
 
 impl SniListener {
     /// Binds the listener.
-    pub async fn bind(config: SniConfig, handle: EngineHandle) -> std::io::Result<Self> {
+    pub async fn bind(mut config: SniConfig, handle: EngineHandle) -> std::io::Result<Self> {
         let listener = TcpListener::bind(config.listen).await?;
+        let address = listener.local_addr()?;
+        config.listen = address;
         Ok(Self {
-            listener,
+            listener: Mutex::new(Some(listener)),
+            address,
             handle,
             config,
         })
@@ -90,34 +98,66 @@ impl SniListener {
 
     /// The address actually bound, which is useful when port 0 was requested.
     pub fn local_addr(&self) -> std::io::Result<SocketAddr> {
-        self.listener.local_addr()
+        Ok(self.address)
     }
 
     /// Runs the accept loop until the task is cancelled.
     pub async fn run(self: Arc<Self>) {
-        loop {
-            let (stream, peer) = match self.listener.accept().await {
-                Ok(pair) => pair,
-                Err(err) => {
-                    // A failed accept is rarely fatal (EMFILE, transient
-                    // network errors); pause briefly and keep serving.
-                    tracing::warn!(error = %err, "sni accept failed");
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                    continue;
-                }
-            };
-
-            let this = Arc::clone(&self);
-            tokio::spawn(async move {
-                if let Err(err) = this.handle_connection(stream, peer).await {
-                    tracing::debug!(error = %err, %peer, "sni connection ended");
-                }
-            });
+        let (_keep_alive, stop) = watch::channel(false);
+        if let Err(err) = self.run_until(stop).await {
+            tracing::warn!(error = %err, "sni listener stopped");
         }
     }
 
+    /// Stops accepting and waits for all connections to exit on shutdown.
+    pub async fn run_until(
+        self: Arc<Self>,
+        mut stop: watch::Receiver<bool>,
+    ) -> std::io::Result<()> {
+        let listener = self
+            .listener
+            .lock()
+            .map_err(|_| std::io::Error::other("sni listener lock poisoned"))?
+            .take()
+            .ok_or_else(|| std::io::Error::other("sni listener already running or stopped"))?;
+        let mut children = JoinSet::new();
+        loop {
+            tokio::select! {
+                biased;
+                _ = stopped(&mut stop) => break,
+                result = children.join_next(), if !children.is_empty() => {
+                    if let Some(Ok(Err(err))) = result {
+                        tracing::debug!(error = %err, "sni connection ended");
+                    }
+                }
+                accepted = listener.accept(), if children.len() < MAX_CONNECTIONS => {
+                    match accepted {
+                        Ok((stream, peer)) => {
+                            let this = Arc::clone(&self);
+                            children.spawn(async move { this.handle_connection(stream, peer).await });
+                        }
+                        Err(err) => {
+                            tracing::warn!(error = %err, "sni accept failed");
+                            tokio::select! {
+                                _ = stopped(&mut stop) => break,
+                                _ = tokio::time::sleep(Duration::from_millis(50)) => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        stop_children(&mut children).await;
+        drop(listener);
+        Ok(())
+    }
+
     /// Reads the ClientHello, decides, and either closes or forwards.
-    async fn handle_connection(&self, mut stream: TcpStream, peer: SocketAddr) -> std::io::Result<()> {
+    async fn handle_connection(
+        &self,
+        mut stream: TcpStream,
+        peer: SocketAddr,
+    ) -> std::io::Result<()> {
         let started = read_client_hello(&mut stream, self.config.handshake_timeout).await;
 
         let (prefix, hello) = started?;
@@ -147,13 +187,13 @@ impl SniListener {
                 self.handle.stats.record_sni(false);
                 match hello {
                     ClientHello::NoSni => {
-                        tracing::trace!(%peer, "client hello without sni; passing through");
+                        tracing::trace!(%peer, "client hello without sni; no forwarding route");
                     }
                     ClientHello::NotTls => {
-                        tracing::trace!(%peer, "connection is not tls; passing through");
+                        tracing::trace!(%peer, "connection is not tls; no forwarding route");
                     }
                     ClientHello::Malformed => {
-                        tracing::debug!(%peer, "malformed client hello; passing through");
+                        tracing::debug!(%peer, "malformed client hello; no forwarding route");
                     }
                     ClientHello::Sni(_) => unreachable!("handled by the Some arm"),
                 }
@@ -178,7 +218,14 @@ async fn forward_to_sni_target(
         return Ok(());
     };
 
-    let mut upstream = TcpStream::connect((target, 443)).await?;
+    let mut upstream = tokio::time::timeout(HANDSHAKE_TIMEOUT, TcpStream::connect((target, 443)))
+        .await
+        .map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "SNI upstream connection timed out",
+            )
+        })??;
     tokio::io::copy_bidirectional(client, &mut upstream).await?;
     Ok(())
 }
@@ -324,7 +371,10 @@ pub fn parse_client_hello(buffer: &[u8]) -> Option<ClientHello> {
                 let name_len = sni.u16()? as usize;
                 let name = sni.take(name_len)?;
                 if name_type == 0x00 {
-                    let host = std::str::from_utf8(name).ok()?.trim_end_matches('.').to_ascii_lowercase();
+                    let host = std::str::from_utf8(name)
+                        .ok()?
+                        .trim_end_matches('.')
+                        .to_ascii_lowercase();
                     if host.is_empty() {
                         return Some(ClientHello::NoSni);
                     }
@@ -462,7 +512,10 @@ mod tests {
             parse_client_hello(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n"),
             Some(ClientHello::NotTls)
         );
-        assert_eq!(parse_client_hello(b"\x16\x03\x01"), Some(ClientHello::NotTls));
+        assert_eq!(
+            parse_client_hello(b"\x16\x03\x01"),
+            Some(ClientHello::NotTls)
+        );
     }
 
     #[test]
@@ -484,10 +537,7 @@ mod tests {
             Completeness::Need(_)
         ));
         assert_eq!(hello_is_complete(&record), Completeness::Complete);
-        assert_eq!(
-            hello_is_complete(b"GET / HTTP/1.1"),
-            Completeness::NotTls
-        );
+        assert_eq!(hello_is_complete(b"GET / HTTP/1.1"), Completeness::NotTls);
     }
 
     #[test]

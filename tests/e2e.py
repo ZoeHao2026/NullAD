@@ -9,6 +9,7 @@ rather than any external HTTPS endpoint.
 Run with: python tests/e2e.py
 """
 
+import http.client
 import json
 import os
 import socket
@@ -17,12 +18,11 @@ import subprocess
 import sys
 import threading
 import time
-import urllib.error
-import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CLI = os.path.join(ROOT, "target", "release", "nullad-cli.exe")
+TEST_CWD = os.environ.get("NULLAD_TEST_CWD", ROOT)
+CLI = os.environ.get("NULLAD_CLI", os.path.join(ROOT, "target", "release", "nullad-cli.exe"))
 if not os.path.exists(CLI):
     CLI = os.path.join(ROOT, "target", "release", "nullad-cli")
 
@@ -56,6 +56,13 @@ class OriginHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_POST(self):  # noqa: N802 - http.server API
+        body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def log_message(self, *args):
         pass  # Keep the test output clean.
 
@@ -65,6 +72,31 @@ def start_origin():
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server
+
+
+def start_dns_upstream():
+    """Local deterministic upstream; the acceptance suite never needs public DNS."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("127.0.0.1", 0))
+    sock.settimeout(0.2)
+    stopped = threading.Event()
+
+    def serve():
+        while not stopped.is_set():
+            try:
+                packet, peer = sock.recvfrom(65535)
+                if len(packet) >= 12:
+                    reply = bytearray(packet)
+                    reply[2:4] = b"\x81\x80"
+                    sock.sendto(reply, peer)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    return sock, stopped, thread
 
 
 # ------------------------------------------------------------------- DNS probe
@@ -96,16 +128,28 @@ def dns_query(port, name, qtype=1, timeout=3.0):
 
 def proxy_get(url, timeout=6.0):
     """Fetch a URL through the NullAD proxy, returning (status, body)."""
-    handler = urllib.request.ProxyHandler(
-        {"http": f"http://127.0.0.1:{PROXY_PORT}"}
-    )
-    opener = urllib.request.build_opener(handler)
-    request = urllib.request.Request(url, headers={"Accept": "*/*"})
+    # Connect explicitly to the proxy. urllib's proxy bypass would otherwise
+    # send loopback requests straight to the origin and produce false passes.
+    connection = http.client.HTTPConnection("127.0.0.1", PROXY_PORT, timeout=timeout)
     try:
-        with opener.open(request, timeout=timeout) as response:
-            return response.status, response.read().decode("utf-8", "replace")
-    except urllib.error.HTTPError as err:
-        return err.code, err.read().decode("utf-8", "replace")
+        connection.request("GET", url, headers={"Accept": "*/*"})
+        response = connection.getresponse()
+        return response.status, response.read().decode("utf-8", "replace")
+    finally:
+        connection.close()
+
+
+def proxy_post(url, body):
+    """Send the request head and binary body in one write to the proxy."""
+    head = (
+        f"POST {url} HTTP/1.1\r\nHost: 127.0.0.1:{ORIGIN_PORT}\r\n"
+        f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n"
+    ).encode()
+    with socket.create_connection(("127.0.0.1", PROXY_PORT), timeout=6) as sock:
+        sock.sendall(head + body)
+        response = http.client.HTTPResponse(sock)
+        response.begin()
+        return response.status, response.read()
 
 
 def wait_for_port(port, timeout=15.0):
@@ -135,7 +179,7 @@ def main():
 
     proc = subprocess.Popen(
         [CLI, "load"],
-        cwd=ROOT,
+        cwd=TEST_CWD,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -156,11 +200,13 @@ def main():
 
     print("\n[2] starting the origin server, proxy and DNS sinkhole")
     origin = start_origin()
+    upstream, upstream_stop, upstream_thread = start_dns_upstream()
     print(f"       origin on 127.0.0.1:{ORIGIN_PORT}")
 
     proxy_proc = subprocess.Popen(
-        [CLI, "serve", "--port", str(PROXY_PORT), "--dns-port", str(DNS_PORT)],
-        cwd=ROOT,
+        [CLI, "serve", "--port", str(PROXY_PORT), "--dns-port", str(DNS_PORT),
+         "--dns-upstream", f"127.0.0.1:{upstream.getsockname()[1]}"],
+        cwd=TEST_CWD,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -186,6 +232,9 @@ def main():
             "origin served /hello.txt" in body,
             body[:120],
         )
+        binary_body = b"NullAD body\x00\xff\x80\r\nend"
+        status, echoed = proxy_post(f"http://127.0.0.1:{ORIGIN_PORT}/echo", binary_body)
+        check("coalesced POST body reaches the origin intact", status == 200 and echoed == binary_body)
 
         print("\n[4] blocking through the proxy")
         # The engine blocks host `graph.facebook.com`, which is in the bundled
@@ -217,6 +266,8 @@ def main():
         )
         rcode = parse_dns_rcode(blocked_response)
         check("blocked domain returns NOERROR", rcode == 0, f"rcode={rcode}")
+        forwarded = dns_query(DNS_PORT, "safe.example")
+        check("unblocked DNS reaches the local upstream", forwarded[0:2] == b"\x42\x42" and parse_dns_rcode(forwarded) == 0)
 
         aaaa = dns_query(DNS_PORT, "doubleclick.net", qtype=28)
         check(
@@ -242,7 +293,7 @@ def main():
         print("\n[6] the proxy reported its decisions")
         status_proc = subprocess.run(
             [CLI, "check", "http://graph.facebook.com/track.gif"],
-            cwd=ROOT,
+            cwd=TEST_CWD,
             capture_output=True,
             text=True,
             timeout=60,
@@ -263,7 +314,7 @@ def main():
                 "--type",
                 "script",
             ],
-            cwd=ROOT,
+            cwd=TEST_CWD,
             capture_output=True,
             text=True,
             timeout=60,
@@ -287,6 +338,10 @@ def main():
             except Exception:
                 process.kill()
         origin.shutdown()
+        origin.server_close()
+        upstream_stop.set()
+        upstream.close()
+        upstream_thread.join(timeout=1)
 
     print("\n" + "=" * 60)
     if failures:

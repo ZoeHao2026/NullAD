@@ -63,6 +63,7 @@ pub struct MatchScratch {
     candidates: Vec<u32>,
     seen_rule: Vec<u32>,
     seen_substring: Vec<u32>,
+    seen_sensitive_substring: Vec<u32>,
     generation: u32,
     lowered_url: String,
 }
@@ -82,6 +83,8 @@ impl MatchScratch {
         let next = self.generation.wrapping_add(1);
         if next == 0 {
             self.seen_rule.fill(0);
+            self.seen_substring.fill(0);
+            self.seen_sensitive_substring.fill(0);
             self.generation = 1;
         } else {
             self.generation = next;
@@ -126,12 +129,13 @@ pub struct RuleSetStats {
 ///
 /// Cheap to share: wrap it in an `Arc` and hand it to as many threads as you
 /// like. Replacing a rule set is a single atomic pointer store, which is how
-/// NullAD achieves hot reloads with zero dropped or blocked requests.
+/// `NullAD` achieves hot reloads with zero dropped or blocked requests.
 #[derive(Debug)]
 pub struct RuleSet {
     rules: Vec<Arc<Rule>>,
     domains: DomainTrie,
     substrings: SubstringIndex,
+    sensitive_substrings: SubstringIndex,
     regexes: RegexIndex,
     /// Rule ids with no literal pattern, evaluated on every request. Expected
     /// to be empty or near-empty in practice.
@@ -207,14 +211,15 @@ impl RuleSet {
         // lowercase — which is the overwhelming majority of real traffic. This
         // is the single largest cost in the matching path, so skipping it is
         // worth the two branches.
-        let url: &str = if request.url.is_ascii() && !request.url.bytes().any(|b| b.is_ascii_uppercase()) {
-            &request.url
-        } else {
-            scratch.lowered_url.clear();
-            scratch.lowered_url.push_str(&request.url);
-            scratch.lowered_url.make_ascii_lowercase();
-            &scratch.lowered_url
-        };
+        let url: &str =
+            if request.url.is_ascii() && !request.url.bytes().any(|b| b.is_ascii_uppercase()) {
+                &request.url
+            } else {
+                scratch.lowered_url.clear();
+                scratch.lowered_url.push_str(&request.url);
+                scratch.lowered_url.make_ascii_lowercase();
+                &scratch.lowered_url
+            };
 
         scratch.candidates.clear();
 
@@ -230,10 +235,18 @@ impl RuleSet {
         );
 
         // 3. Regex index: only the rules that needed a regex.
-        self.regexes.scan(url, &mut scratch.candidates);
+        self.sensitive_substrings.scan(
+            &request.url,
+            &mut scratch.seen_sensitive_substring,
+            scratch.generation,
+            &mut scratch.candidates,
+        );
+        self.regexes.scan(&request.url, &mut scratch.candidates);
 
         // 4. Option-only rules, which have no literal to index.
-        scratch.candidates.extend_from_slice(&self.always_candidates);
+        scratch
+            .candidates
+            .extend_from_slice(&self.always_candidates);
 
         if scratch.candidates.is_empty() {
             return CheckResult::no_match();
@@ -300,7 +313,9 @@ impl RuleSet {
 
         CheckResult {
             blocked,
-            matched_rule: decided_by.and_then(|id| self.rules.get(id as usize)).cloned(),
+            matched_rule: decided_by
+                .and_then(|id| self.rules.get(id as usize))
+                .cloned(),
             matched_rule_ids: matched,
         }
     }
@@ -333,6 +348,7 @@ fn rule_eligible(rule: &Rule, request: &Request) -> bool {
             fragments,
             *trailing_wildcard,
             *trailing_separator,
+            rule.options.match_case,
         ),
         _ => true,
     }
@@ -349,6 +365,7 @@ fn domain_path_matches(
     fragments: &[String],
     trailing_wildcard: bool,
     trailing_separator: bool,
+    match_case: bool,
 ) -> bool {
     use crate::rule::domain_suffix_match;
 
@@ -362,7 +379,12 @@ fn domain_path_matches(
     let Some(host_pos) = lowered.find(request.host.as_str()) else {
         return false;
     };
-    let after_host = &lowered[host_pos + request.host.len()..];
+    let url = if match_case {
+        request.url.as_str()
+    } else {
+        &lowered
+    };
+    let after_host = &url[host_pos + request.host.len()..];
 
     // Skip an explicit port so `example.com:8080/path` still matches.
     let path = match after_host.strip_prefix(':') {
@@ -387,10 +409,7 @@ fn domain_path_matches(
     if trailing_separator {
         // A `^` separator: the pattern must be followed by the end of the URL
         // or by a character that cannot appear in a domain or a word.
-        return path[cursor..]
-            .chars()
-            .next()
-            .is_none_or(is_separator);
+        return path[cursor..].chars().next().is_none_or(is_separator);
     }
 
     if !trailing_wildcard && cursor != path.len() {
@@ -460,8 +479,7 @@ impl RuleSetBuilder {
     pub fn add_list(&mut self, source: &str, list_id: u32) -> ParseStats {
         let parser = RuleParser::new().list_id(list_id);
         let (rules, stats) = parser.parse_list(source);
-        self.accumulated
-            .extend(rules.into_iter().map(Arc::new));
+        self.accumulated.extend(rules.into_iter().map(Arc::new));
         stats
     }
 
@@ -532,11 +550,17 @@ impl RuleSetBuilder {
 
         let mut domains = DomainTrie::new();
         let mut substrings = SubstringIndex::new();
+        let mut sensitive_substrings = SubstringIndex::case_sensitive();
         let mut regexes = RegexIndex::new();
         let mut always_candidates: Vec<u32> = Vec::new();
 
         for (index, rule) in rules.iter().enumerate() {
             let rule_id = u32::try_from(index).unwrap_or(u32::MAX);
+            let substring_index = if rule.options.match_case {
+                &mut sensitive_substrings
+            } else {
+                &mut substrings
+            };
             match &rule.pattern {
                 RulePattern::DomainAnchor { domain, .. } => {
                     domains.insert(domain, rule_id);
@@ -553,7 +577,7 @@ impl RuleSetBuilder {
                     // runtime re-verifies both together, so registering the
                     // host here is only a cheap pre-filter.
                     domains.insert(domain, rule_id);
-                    substrings.add(FragmentPattern {
+                    substring_index.add(FragmentPattern {
                         rule_id,
                         fragments: fragments.clone(),
                         leading_wildcard: true,
@@ -564,7 +588,7 @@ impl RuleSetBuilder {
                     stats.domain_path_rules += 1;
                 }
                 RulePattern::Substring(text) => {
-                    substrings.add(FragmentPattern {
+                    substring_index.add(FragmentPattern {
                         rule_id,
                         fragments: smallvec::smallvec![text.clone()],
                         leading_wildcard: true,
@@ -581,7 +605,7 @@ impl RuleSetBuilder {
                     start_anchored,
                     end_anchored,
                 } => {
-                    substrings.add(FragmentPattern {
+                    substring_index.add(FragmentPattern {
                         rule_id,
                         fragments: fragments.clone(),
                         leading_wildcard: *leading_wildcard,
@@ -615,13 +639,16 @@ impl RuleSetBuilder {
         }
 
         substrings.build();
+        sensitive_substrings.build();
         stats.trie_nodes = domains.node_count();
-        stats.distinct_fragments = substrings.distinct_fragments();
+        stats.distinct_fragments =
+            substrings.distinct_fragments() + sensitive_substrings.distinct_fragments();
 
         Ok(RuleSet {
             rules,
             domains,
             substrings,
+            sensitive_substrings,
             regexes,
             always_candidates,
             stats,
@@ -754,6 +781,7 @@ impl FilterEngine {
                 rules: Vec::new(),
                 domains: DomainTrie::new(),
                 substrings: SubstringIndex::new(),
+                sensitive_substrings: SubstringIndex::case_sensitive(),
                 regexes: RegexIndex::new(),
                 always_candidates: Vec::new(),
                 stats: RuleSetStats::default(),
@@ -932,7 +960,10 @@ mod tests {
     fn important_block_beats_exception() {
         let engine = engine_from("||ads.example.com^$important\n@@||ads.example.com^");
         assert!(engine
-            .check(&Request::new("https://ads.example.com/x", ResourceType::Other))
+            .check(&Request::new(
+                "https://ads.example.com/x",
+                ResourceType::Other
+            ))
             .is_blocked());
     }
 
@@ -940,10 +971,16 @@ mod tests {
     fn resource_type_restriction_is_enforced() {
         let engine = engine_from("||ads.example.com^$image");
         assert!(engine
-            .check(&Request::new("https://ads.example.com/x.png", ResourceType::Image))
+            .check(&Request::new(
+                "https://ads.example.com/x.png",
+                ResourceType::Image
+            ))
             .is_blocked());
         assert!(!engine
-            .check(&Request::new("https://ads.example.com/x.js", ResourceType::Script))
+            .check(&Request::new(
+                "https://ads.example.com/x.js",
+                ResourceType::Script
+            ))
             .is_blocked());
     }
 

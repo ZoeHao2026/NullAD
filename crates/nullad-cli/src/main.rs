@@ -5,9 +5,7 @@
 //! `nullad-cli bench`, and the interception stack can be exercised end to end
 //! with `nullad-cli serve` without involving the desktop GUI at all.
 //!
-//! Argument parsing is hand-rolled rather than delegated to a CLI framework
-//! because this host's registry cache does not contain one, and the surface is
-//! small enough that a dependency would not pay for itself.
+//! The small command surface uses hand-written argument parsing.
 //!
 //! ## 中文说明
 //!
@@ -16,8 +14,7 @@
 //! 整套拦截链路也可以用 `nullad-cli serve` 端到端跑通，
 //! 完全不需要拉起桌面 GUI。
 //!
-//! 参数解析是手写的，没有交给 CLI 框架：本机的 registry 缓存里没有这类库，
-//! 而这个命令行接口足够小，引入依赖并不划算。
+//! 命令行入口较小，使用手写参数解析。
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -123,7 +120,9 @@ fn main() -> ExitCode {
             json,
         } => {
             let (engine, report) = load_engine(&lists);
-            report.print();
+            if !json {
+                report.print();
+            }
             bench::run(&engine, iterations, synthetic_rules, json)
         }
         Command::Serve {
@@ -271,7 +270,8 @@ fn parse_args(args: &[String]) -> Result<Option<Command>, String> {
             "--json" => json = true,
             "--show-rules" => {
                 index += 1;
-                show_rules = parse_number(expect_value(args, index, "--show-rules")?, "--show-rules")?;
+                show_rules =
+                    parse_number(expect_value(args, index, "--show-rules")?, "--show-rules")?;
             }
             "--port" | "-p" => {
                 index += 1;

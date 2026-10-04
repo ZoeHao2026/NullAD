@@ -10,63 +10,18 @@
 
 pub mod commands;
 pub mod logging;
+pub mod runtime;
 pub mod tray;
 
-use std::sync::{Arc, Mutex};
+use runtime::RunningTasks;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use tokio::sync::Mutex;
 
 use nullad_core::{AppHandle, AppSettings, AppState};
 use tauri::{Emitter, Manager};
-
-/// Handles to the running interceptor tasks.
-///
-/// Task handles live here rather than in `nullad-core` so that the core stays
-/// free of any async runtime, and so that "stop" is one place that aborts
-/// everything it started.
-#[derive(Debug, Default)]
-pub struct RunningTasks {
-    /// Abort handles for the spawned proxy and DNS tasks.
-    handles: Mutex<Vec<tauri::async_runtime::JoinHandle<()>>>,
-}
-
-impl RunningTasks {
-    /// Records a newly spawned task.
-    pub fn push(&self, handle: tauri::async_runtime::JoinHandle<()>) {
-        match self.handles.lock() {
-            Ok(mut guard) => guard.push(handle),
-            Err(poisoned) => poisoned.into_inner().push(handle),
-        }
-    }
-
-    /// Aborts every recorded task and clears the list.
-    ///
-    /// Returns how many tasks were stopped.
-    pub fn abort_all(&self) -> usize {
-        let mut handles = match self.handles.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        let count = handles.len();
-        for handle in handles.drain(..) {
-            handle.abort();
-        }
-        count
-    }
-
-    /// Number of tasks currently tracked.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        match self.handles.lock() {
-            Ok(guard) => guard.len(),
-            Err(poisoned) => poisoned.into_inner().len(),
-        }
-    }
-
-    /// Returns `true` when nothing is tracked.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-}
 
 /// The application's managed state, as Tauri sees it.
 #[derive(Debug)]
@@ -74,7 +29,11 @@ pub struct DesktopState {
     /// Shared application handle.
     pub app: AppHandle,
     /// Handles to the running interceptor tasks.
-    pub tasks: RunningTasks,
+    pub tasks: Mutex<RunningTasks>,
+    pub custom_edits: Arc<std::sync::Mutex<()>>,
+    pub tray_available: AtomicBool,
+    pub exiting: AtomicBool,
+    pub exit_ready: AtomicBool,
 }
 
 impl DesktopState {
@@ -83,7 +42,11 @@ impl DesktopState {
     pub fn new(app: AppHandle) -> Self {
         Self {
             app,
-            tasks: RunningTasks::default(),
+            tasks: Mutex::new(RunningTasks::default()),
+            custom_edits: Arc::new(std::sync::Mutex::new(())),
+            tray_available: AtomicBool::new(false),
+            exiting: AtomicBool::new(false),
+            exit_ready: AtomicBool::new(false),
         }
     }
 }
@@ -102,11 +65,7 @@ pub fn run() -> i32 {
         std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", override_dir);
     }
 
-    let state = Arc::new(AppState::bootstrap(settings));
-    let app_handle = AppHandle::new(Arc::clone(&state));
-
     let result = tauri::Builder::default()
-        .manage(DesktopState::new(app_handle.clone()))
         .invoke_handler(tauri::generate_handler![
             commands::get_status,
             commands::recent_decisions,
@@ -128,16 +87,29 @@ pub fn run() -> i32 {
             commands::platform_info,
         ])
         .setup(move |app| {
+            let resource_dir = app.path().resource_dir().ok();
+            let state = Arc::new(AppState::bootstrap_with_resource_dir(
+                settings.clone(),
+                resource_dir,
+            ));
+            let app_handle = AppHandle::new(state);
+            app.manage(DesktopState::new(app_handle.clone()));
             // The tray is a nicety, not a requirement: a machine where the tray
             // cannot be created (locked-down desktops, some remote sessions)
             // should still get a working window and a working filter engine.
             // Failing the whole application because an icon was refused would be
             // a poor trade.
-            if let Err(err) = tray::install(app.handle()) {
-                tracing::warn!(
-                    error = %err,
-                    "the system tray could not be created; NullAD will run window-only"
-                );
+            if std::env::var_os("NULLAD_DISABLE_TRAY").is_none() {
+                if let Err(err) = tray::install(app.handle()) {
+                    tracing::warn!(
+                        error = %err,
+                        "the system tray could not be created; NullAD will run window-only"
+                    );
+                } else {
+                    app.state::<DesktopState>()
+                        .tray_available
+                        .store(true, Ordering::Relaxed);
+                }
             }
 
             // Surface anything an earlier run left applied, so the user can put
@@ -178,17 +150,55 @@ pub fn run() -> i32 {
             // Closing the window hides it; NullAD keeps filtering in the tray,
             // which is the behaviour a user of a background blocker expects.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+                let state = window.app_handle().state::<DesktopState>();
+                if state.tray_available.load(Ordering::Relaxed) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                } else {
+                    api.prevent_close();
+                    request_exit(window.app_handle());
+                }
             }
         })
-        .run(tauri::generate_context!());
+        .build(tauri::generate_context!());
 
     match result {
-        Ok(()) => 0,
+        Ok(app) => {
+            app.run(|handle, event| {
+                if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                    let state = handle.state::<DesktopState>();
+                    if !state.exit_ready.load(Ordering::Relaxed) {
+                        api.prevent_exit();
+                        request_exit(handle);
+                    }
+                }
+            });
+            0
+        }
         Err(err) => {
             eprintln!("NullAD failed to start: {err}");
             1
         }
     }
+}
+
+/// Exit only after the shared asynchronous shutdown has completed.
+pub fn request_exit<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if app
+        .state::<DesktopState>()
+        .exiting
+        .swap(true, Ordering::Relaxed)
+    {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = runtime::stop(&app.state::<DesktopState>()).await {
+            tracing::error!(%error, "shutdown retained pending recovery entries");
+        }
+        app.state::<DesktopState>()
+            .exit_ready
+            .store(true, Ordering::Relaxed);
+        app.exit(0);
+    });
 }

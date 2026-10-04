@@ -3,7 +3,7 @@
 //! Only the `regex` crate is used here, and that is a deliberate security
 //! decision rather than a convenience one: `regex` guarantees linear-time
 //! matching with no backtracking, so a hostile or careless filter list cannot
-//! induce catastrophic backtracking (ReDoS) against the engine. Rules that fail
+//! induce catastrophic backtracking (`ReDoS`) against the engine. Rules that fail
 //! to compile are quarantined at parse time and never reach this index.
 
 use regex::{Regex, RegexBuilder};
@@ -24,128 +24,23 @@ struct RegexEntry {
     min_len: usize,
 }
 
-/// Returns a lower bound on the length of any string the regex can match.
-///
-/// The bound is derived from the syntax rather than computed exactly, and it is
-/// always an *under*-estimate. That direction is the only safe one: too low
-/// merely forgoes the fast rejection, whereas too high would wrongly skip a rule
-/// and silently stop blocking.
-///
-/// The rules are:
-///
-/// * a literal character contributes one;
-/// * `?` and `*` make their atom optional, so it contributes nothing;
-/// * `{n,m}` contributes its lower bound `n`;
-/// * `+` and a bare atom contribute one;
-/// * a top-level alternation contributes the *minimum* over its branches, not
-///   their sum, because `ab|cd` matches in two characters;
-/// * grouped alternations are not analysed, so a group contributes zero.
-///
-/// A case-insensitive pattern is compiled into character classes, in which case
-/// the literal scan finds little and the bound stays conservative.
+/// Returns the HIR minimum matching length in UTF-8 bytes.
+/// Parsing uses the same case option as compilation; unknown bounds fall back
+/// to zero, so this optimization cannot reject a potentially matching URL.
 #[must_use]
+#[cfg(test)]
 pub fn minimum_match_length(pattern: &str) -> usize {
-    let mut total = 0usize;
-    let mut best: Option<usize> = None;
-    let mut depth = 0usize;
-    let mut chars = pattern.chars().peekable();
-
-    while let Some(ch) = chars.next() {
-        match ch {
-            // Anchors do not consume characters.
-            '^' | '$' => {}
-            '(' => depth += 1,
-            ')' => depth = depth.saturating_sub(1),
-            // A top-level alternation splits the pattern into independent
-            // branches; the whole pattern's floor is the smallest branch floor.
-            '|' if depth == 0 => {
-                best = Some(best.map_or(total, |current: usize| current.min(total)));
-                total = 0;
-            }
-            // A nested alternation belongs to a group this scan does not model,
-            // so nothing is claimed for it.
-            '|' => {}
-            '[' => {
-                let mut escaped = false;
-                for inner in chars.by_ref() {
-                    if escaped {
-                        escaped = false;
-                    } else if inner == '\\' {
-                        escaped = true;
-                    } else if inner == ']' {
-                        break;
-                    }
-                }
-                total += mandatory_contribution(&mut chars);
-            }
-            '\\' => {
-                if chars.next().is_some() {
-                    total += mandatory_contribution(&mut chars);
-                }
-            }
-            // A quantifier with no preceding atom: skip it harmlessly.
-            '*' | '+' | '?' => {}
-            '{' => {
-                let mut nesting = 0usize;
-                for inner in chars.by_ref() {
-                    if inner == '{' {
-                        nesting += 1;
-                    } else if inner == '}' {
-                        if nesting == 0 {
-                            break;
-                        }
-                        nesting -= 1;
-                    }
-                }
-            }
-            _ => {
-                total += mandatory_contribution(&mut chars);
-            }
-        }
-    }
-
-    best.map_or(total, |current| current.min(total))
+    minimum_length_with_case(pattern, true)
 }
 
-/// Counts how many characters the atom preceding a quantifier must contribute.
-///
-/// The atom itself is always worth one character; the quantifier then decides
-/// whether that copy is mandatory. `?` and `*` make it optional (zero), `+` and
-/// a bare atom keep it (one), and `{n,m}` raises it to its lower bound `n`.
-fn mandatory_contribution(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> usize {
-    match chars.peek() {
-        // `?` and `*` both make the atom optional: it need not appear at all.
-        Some('?') | Some('*') => {
-            chars.next();
-            0
-        }
-        // `+` requires at least one copy, which is the atom already counted.
-        Some('+') => {
-            chars.next();
-            1
-        }
-        Some('{') => {
-            chars.next();
-            let mut lower = String::new();
-            for inner in chars.by_ref() {
-                if inner == '}' || inner == ',' {
-                    break;
-                }
-                lower.push(inner);
-            }
-            // Consume the remainder of a `{n,m}` range.
-            while let Some(&next) = chars.peek() {
-                chars.next();
-                if next == '}' {
-                    break;
-                }
-            }
-            // `{0}` makes the atom optional; otherwise its lower bound applies.
-            lower.parse::<usize>().unwrap_or(1)
-        }
-        // A bare atom is one mandatory character.
-        _ => 1,
-    }
+fn minimum_length_with_case(pattern: &str, match_case: bool) -> usize {
+    regex_syntax::ParserBuilder::new()
+        .case_insensitive(!match_case)
+        .build()
+        .parse(pattern)
+        .ok()
+        .and_then(|hir| hir.properties().minimum_len())
+        .unwrap_or(0)
 }
 
 /// An index of compiled `/regex/` rules.
@@ -177,12 +72,8 @@ impl RegexIndex {
             .build()
             .map_err(|e| e.to_string())?;
 
-        // The bound is a property of the pattern's syntax, not of its case
-        // sensitivity: case folding maps a character to a character, so it
-        // cannot change how many characters a match consumes. It is therefore
-        // computed for both forms. The randomised property test in this module
-        // verifies that claim rather than relying on it.
-        let min_len = minimum_match_length(pattern);
+        // Unicode case folding can change byte length; match the compiler options.
+        let min_len = minimum_length_with_case(pattern, match_case);
 
         self.entries.push(RegexEntry {
             rule_id,
@@ -336,8 +227,8 @@ mod tests {
         assert_eq!(minimum_match_length("abcdef|xy"), 2);
         // A grouped alternation is not analysed, so it contributes nothing and
         // the surrounding literals still count.
-        assert_eq!(minimum_match_length("(ab|cd)"), 4);
-        assert_eq!(minimum_match_length("x(ab|cd)y"), 6);
+        assert_eq!(minimum_match_length("(ab|cd)"), 2);
+        assert_eq!(minimum_match_length("x(ab|cd)y"), 4);
     }
 
     #[test]
