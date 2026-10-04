@@ -314,16 +314,36 @@ enum Transport {
 impl DnsServer {
     /// Binds both transports before reporting readiness, including for port 0.
     pub async fn bind(mut config: DnsConfig, handle: EngineHandle) -> std::io::Result<Self> {
-        let udp = UdpSocket::bind(config.listen).await?;
-        let address = udp.local_addr()?;
-        let tcp = TcpListener::bind(address).await?;
-        config.listen = address;
-        Ok(Self {
-            handle,
-            config,
-            bindings: Mutex::new(Some((udp, tcp))),
-            address,
-        })
+        let mut attempts_left = if config.listen.port() == 0 { 128 } else { 1 };
+        loop {
+            // Windows may select a UDP ephemeral port unavailable to TCP.
+            // Select through TCP first, then verify its UDP companion while
+            // retaining the listener. Fixed ports must never silently change.
+            let tcp = TcpListener::bind(config.listen).await?;
+            let address = tcp.local_addr()?;
+            match UdpSocket::bind(address).await {
+                Ok(udp) => {
+                    config.listen = address;
+                    return Ok(Self {
+                        handle,
+                        config,
+                        bindings: Mutex::new(Some((udp, tcp))),
+                        address,
+                    });
+                }
+                Err(error)
+                    if attempts_left > 1
+                        && matches!(
+                            error.kind(),
+                            std::io::ErrorKind::AddrInUse | std::io::ErrorKind::PermissionDenied
+                        ) =>
+                {
+                    attempts_left -= 1;
+                    drop(tcp);
+                }
+                Err(error) => return Err(error),
+            }
+        }
     }
 
     /// The address actually bound.

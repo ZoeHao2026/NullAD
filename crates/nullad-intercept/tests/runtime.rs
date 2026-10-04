@@ -20,6 +20,58 @@ async fn bounded<T>(future: impl Future<Output = T>) -> T {
         .expect("socket operation timed out")
 }
 
+async fn local_dns_transports() -> (UdpSocket, TcpListener) {
+    for attempt in 0..128 {
+        let tcp = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        match UdpSocket::bind(tcp.local_addr().unwrap()).await {
+            Ok(udp) => return (udp, tcp),
+            Err(error)
+                if attempt < 127
+                    && matches!(
+                        error.kind(),
+                        io::ErrorKind::AddrInUse | io::ErrorKind::PermissionDenied
+                    ) => {}
+            Err(error) => panic!("local DNS fixture bind failed: {error}"),
+        }
+    }
+    unreachable!("last attempt returns or panics")
+}
+
+#[tokio::test]
+async fn dns_fixed_port_failure_releases_the_other_transport() {
+    let (occupied_udp, tcp) = local_dns_transports().await;
+    let address = tcp.local_addr().unwrap();
+    drop(tcp);
+    let error = DnsServer::bind(
+        DnsConfig {
+            listen: address,
+            ..Default::default()
+        },
+        handle(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(
+        error.kind(),
+        io::ErrorKind::AddrInUse | io::ErrorKind::PermissionDenied
+    ));
+    // A failed fixed-port bind must release the TCP step and keep the caller's
+    // occupied UDP socket; it cannot quietly select a different port.
+    let tcp = TcpListener::bind(address).await.unwrap();
+    assert_eq!(occupied_udp.local_addr().unwrap(), address);
+    drop((occupied_udp, tcp));
+    let server = DnsServer::bind(
+        DnsConfig {
+            listen: address,
+            ..Default::default()
+        },
+        handle(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(server.local_addr().unwrap(), address);
+}
+
 fn handle() -> EngineHandle {
     let mut builder = RuleSetBuilder::new();
     builder.add_list_auto("||blocked.example^");
@@ -330,9 +382,8 @@ async fn dns_concurrency_is_bounded_and_saturation_returns_servfail() {
 
 #[tokio::test]
 async fn dns_retries_truncated_udp_over_tcp_and_preserves_large_tcp_answers() {
-    let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let (udp, tcp) = local_dns_transports().await;
     let upstream_address = udp.local_addr().unwrap();
-    let tcp = TcpListener::bind(upstream_address).await.unwrap();
     let server = Arc::new(
         DnsServer::bind(
             DnsConfig {

@@ -10,7 +10,7 @@ Its matching engine contains no network, filesystem, or platform integration cod
 
 | Area | Result and evidence |
 |---|---|
-| Windows engineering checks | **Pass**: formatting, strict Clippy and 228 workspace tests (3 explicitly ignored); release build recorded in validation |
+| Windows engineering checks | **Pass**: formatting, strict Clippy and 229 workspace tests (3 explicitly ignored); release build recorded in validation |
 | Network and lifecycle | **Pass**: 22 local HTTP/DNS checks; ports rebound after 20 cycles and 40 concurrent start/stop operations |
 | Settings, rules and recovery | **Pass**: 30 core and 32 host regressions, including failed persistence, obsolete reloads and retained failed restores |
 | Windows system proxy | **Pass**: explicit apply/revert and CLI Ctrl+Break restore all four raw registry values; DNS unchanged, pending=0 |

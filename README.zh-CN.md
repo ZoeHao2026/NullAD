@@ -10,7 +10,7 @@ NullAD 是用 Rust 编写的广告与追踪拦截软件，提供桌面界面和�
 
 | 范围 | 结果与证据 |
 |---|---|
-| Windows 工程检查 | **Pass**：格式、严格 Clippy、全工作区 228 项测试通过（3 项显式忽略）；release 构建见验收记录 |
+| Windows 工程检查 | **Pass**：格式、严格 Clippy、全工作区 229 项测试通过（3 项显式忽略）；release 构建见验收记录 |
 | 网络与生命周期 | **Pass**：本地 HTTP/DNS 22 项验收；20 次循环与 40 个并发启停操作后端口可重绑 |
 | 配置、规则更新与恢复 | **Pass**：core 30、host 32 项回归；配置写入失败不发布、旧加载不能覆盖新配置、失败恢复保留记录 |
 | Windows 系统代理 | **Pass**：显式 apply/revert 与 CLI Ctrl+Break 恢复；四个注册表字段完整恢复，DNS 未变化、pending=0 |
