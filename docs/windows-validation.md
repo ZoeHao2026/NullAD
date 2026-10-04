@@ -21,7 +21,7 @@ It contains no personal machine paths, account identifiers or adapter GUIDs.
 | Native minimum window | **Pass** | Final portable GUI checked on all four pages at 840x560 content size; settings Save remains visible, tables scroll, real records update and timestamps stay on one line |
 | Tray / actual OS DPI | **Unknown** | Tray menu operations and real 125%/150% OS scaling remain unverified; browser equivalents are recorded separately |
 | NSIS / portable archives | **Pass** | NSIS builds; extracted CLI loads 232 bundled rules and passes 22 traffic checks from unrelated cwd; extracted GUI loads 232, serves local HTTP and blocks an ad/custom domain. Installation/uninstallation remains Unknown |
-| Remote Windows CI | **Pass for 42da155; latest correction pending** | [PR run 37203007636](https://github.com/ZoeHao2026/NullAD/actions/runs/37203007636), source 42da155: formatting, strict Clippy, workspace/UI tests, release, 22 local traffic fixtures, NSIS, ZIP/checksums and artifact upload all passed |
+| Remote Windows CI | **Pass** | [PR run 37204735279](https://github.com/ZoeHao2026/NullAD/actions/runs/37204735279), source 5ac216b: formatting, strict Clippy, workspace/UI tests, release, 22 local traffic fixtures, NSIS, ZIP/checksums and artifact upload all passed |
 | Performance | **Pass** | Same-machine alternating five runs per configuration; engine and actual decide latency/throughput/allocation in [performance.md](performance.md), all raw runs in [JSON](performance-comparison.json) |
 | macOS/Linux native acceptance | **Deferred** | Known recovery gaps below; not accepted as Windows validation |
 
@@ -34,8 +34,9 @@ available to TCP. Automatic pairing now selects TCP first and retries the UDP
 companion up to 128 candidates on conflicts; a configured fixed port still fails
 without choosing another port. The local upstream fixture follows the same
 constraint, and a real occupied-UDP regression verifies rollback releases TCP.
-The current source CI result must be observed independently; the linked earlier
-run predates that correction. Packages from separate builds have separate checksums.
+The linked current runtime-source CI run passed after that correction.
+Local packages were rebuilt from 5ac216b. Earlier artifacts and checksums remain
+historical evidence; packages from separate builds have separate checksums.
 
 One registry round-trip unit test and the live acceptance test are ignored
 during normal test execution. A normal test-suite pass therefore does not
