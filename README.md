@@ -15,9 +15,10 @@ Its matching engine contains no network, filesystem, or platform integration cod
 | Settings, rules and recovery | **Pass**: 30 core and 32 host regressions, including failed persistence, obsolete reloads and retained failed restores |
 | Windows system proxy | **Pass**: explicit apply/revert and CLI Ctrl+Break restore all four raw registry values; DNS unchanged, pending=0 |
 | Native Windows desktop | **Pass**: four pages, IPC, Chinese/English, dark theme, real traffic/logs, explicit save, restart marker and close cleanup without tray |
+| Native minimum window | **Pass**: final portable GUI checked on all four pages at 840x560, including the corrected log timestamp column |
 | Privileged Windows DNS / IPv6 UDP | **Unknown**: no privileged DNS writes; no passing native IPv6 UDP loopback observation |
 | Tray menu / actual 125%/150% OS scaling | **Unknown**: browser equivalents pass but do not establish native system scaling or tray menu acceptance |
-| Delivery packages / remote CI | Build, clean-directory startup and remote workflow results are recorded separately in [Windows validation](docs/windows-validation.md) |
+| Delivery packages / remote CI | **Pass**: NSIS/ZIP builds, clean-directory portable startup and [Windows CI](https://github.com/ZoeHao2026/NullAD/actions/runs/37203007636); installation/uninstallation remain Unknown. See [Windows validation](docs/windows-validation.md) |
 | macOS and Linux | **Deferred**: known restoration gaps and no native acceptance |
 
 No executed final ordinary check failed; unverified work remains Unknown/Deferred.

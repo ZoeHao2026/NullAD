@@ -15,9 +15,10 @@ NullAD 是用 Rust 编写的广告与追踪拦截软件，提供桌面界面和�
 | 配置、规则更新与恢复 | **Pass**：core 30、host 32 项回归；配置写入失败不发布、旧加载不能覆盖新配置、失败恢复保留记录 |
 | Windows 系统代理 | **Pass**：显式 apply/revert 与 CLI Ctrl+Break 恢复；四个注册表字段完整恢复，DNS 未变化、pending=0 |
 | Windows 原生桌面 | **Pass**：四页、IPC、中文/英文、深色、真实流量和日志、显式保存、待重启提示、无托盘关闭清理 |
+| 原生最小窗口 | **Pass**：最终便携 GUI 的四页均验证 840x560，包含修正后的日志时间列 |
 | Windows 管理员 DNS / IPv6 UDP | **Unknown**：无管理员 DNS 写入验收；本机 IPv6 UDP loopback 未取得通过结果 |
 | 托盘菜单 / 实际系统 125%/150% 缩放 | **Unknown**：浏览器等效尺寸测试通过，不能替代原生系统缩放与托盘菜单操作 |
-| 交付包 / 远端 CI | 构建、干净目录启动和远端工作流结果分别记录在 [Windows 验收](docs/windows-validation.md) |
+| 交付包 / 远端 CI | **Pass**：NSIS/ZIP 构建、仓库外便携启动、[Windows CI](https://github.com/ZoeHao2026/NullAD/actions/runs/37203007636)；安装/卸载仍为 Unknown。详见 [Windows 验收](docs/windows-validation.md) |
 | macOS 与 Linux | **Deferred**：存在已知恢复不足，未做原生验收 |
 
 已执行的最终常规检查没有失败项；未验收项单列为 Unknown/Deferred。

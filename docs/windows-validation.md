@@ -18,13 +18,20 @@ It contains no personal machine paths, account identifiers or adapter GUIDs.
 | UI failure and layout checks | **Pass** | 11 Node tests and 54 browser assertions; four concept-image comparisons, default/minimum and equivalent 125%/150% viewports, no page errors |
 | Privileged system DNS apply/revert | **Unknown** | Process not elevated; no system DNS setting modified. DHCP/static, interface identity and legacy rejection have isolated tests |
 | Windows IPv6 UDP upstream | **Unknown** | Native IPv6 UDP loopback probe timed out, including outside NullAD; ignored fixture does not establish application acceptance |
-| Native window size / tray / actual OS DPI | **Partial** | Minimum 840x560 verified on rules/settings/logs, with scrolling and reachable Save; narrow timestamp wrapping corrected and browser suite repeated. Tray menu and real 125%/150% OS scaling remain Unknown |
+| Native minimum window | **Pass** | Final portable GUI checked on all four pages at 840x560 content size; settings Save remains visible, tables scroll, real records update and timestamps stay on one line |
+| Tray / actual OS DPI | **Unknown** | Tray menu operations and real 125%/150% OS scaling remain unverified; browser equivalents are recorded separately |
 | NSIS / portable archives | **Pass** | NSIS builds; extracted CLI loads 232 bundled rules and passes 22 traffic checks from unrelated cwd; extracted GUI loads 232, serves local HTTP and blocks an ad/custom domain. Installation/uninstallation remains Unknown |
-| Remote Windows CI | **Pending** | New workflow runs checks, release, NSIS, ZIP/checksums and artifact upload; observe the PR run separately |
+| Remote Windows CI | **Pass** | [PR run 37203007636](https://github.com/ZoeHao2026/NullAD/actions/runs/37203007636), source 42da155: formatting, strict Clippy, workspace/UI tests, release, 22 local traffic fixtures, NSIS, ZIP/checksums and artifact upload all passed |
 | Performance | **Pass** | Same-machine alternating five runs per configuration; engine and actual decide latency/throughput/allocation in [performance.md](performance.md), all raw runs in [JSON](performance-comparison.json) |
 | macOS/Linux native acceptance | **Deferred** | Known recovery gaps below; not accepted as Windows validation |
 
 Recorded environment: Windows x86_64, Rust 1.96.0, release builds, MSVC, installed WebView2. No failed final ordinary check is being hidden as a pass. Unknown/Deferred rows remain outside the verified result.
+
+Local portable packages were built from b10ebc8. The CI source 42da155 changes
+only a test failure counter for compatibility with newer Rust; runtime and GUI
+source are identical. CI artifacts are independent builds, with their own
+checksums. The first remote Clippy run failed on the deprecated test helper;
+the linked run passed after that correction.
 
 One registry round-trip unit test and the live acceptance test are ignored
 during normal test execution. A normal test-suite pass therefore does not
@@ -101,7 +108,7 @@ available administrative rights, restore the exact configuration, and verify
 the result. A legacy snapshot without mode must remain unresolved; do not
 guess. This acceptance remains **Unknown**.
 
-## Remaining native acceptance and package reproduction
+## Native acceptance checklist and package reproduction
 
 - Open the desktop with an isolated profile. Verify the default Chinese
   interface and English switch, including tray labels and persistence.
