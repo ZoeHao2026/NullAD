@@ -40,11 +40,21 @@ impl MockBackend {
         })
     }
     fn fail(counter: &AtomicUsize) -> bool {
-        counter
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |value| {
-                value.checked_sub(1)
-            })
-            .is_ok()
+        // Keep the failure counter compatible with the declared Rust MSRV
+        // and newer toolchains, without relying on the renamed fetch_update.
+        let mut value = counter.load(Ordering::SeqCst);
+        while value > 0 {
+            match counter.compare_exchange_weak(
+                value,
+                value - 1,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => return true,
+                Err(current) => value = current,
+            }
+        }
+        false
     }
 }
 
