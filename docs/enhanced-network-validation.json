@@ -1,0 +1,13 @@
+{
+  "unchanged": true,
+  "before": {
+    "method": "registry value type/content + DNS server list fingerprint; no sensitive values exported",
+    "proxy_sha256": "ecb9fa379181263b976592269313f122bbe9c26593a0a80979db01b89d395fd7",
+    "dns_sha256": "c9f668c503b4edb3362dff9b73449f34efb9ec3b5771cf5ca3f13277742a4f4d"
+  },
+  "after": {
+    "method": "registry value type/content + DNS server list fingerprint; no sensitive values exported",
+    "dns_sha256": "c9f668c503b4edb3362dff9b73449f34efb9ec3b5771cf5ca3f13277742a4f4d",
+    "proxy_sha256": "ecb9fa379181263b976592269313f122bbe9c26593a0a80979db01b89d395fd7"
+  }
+}

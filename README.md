@@ -6,25 +6,54 @@ NullAD is a Rust ad and tracker blocker with a desktop interface and a headless 
 It filters plaintext HTTP requests, TLS connections by hostname, and DNS queries.
 Its matching engine contains no network, filesystem, or platform integration code.
 
-## Local detection and proxy coexistence
+## Bundled rules, local detection and proxy coexistence
 
-The independent Chrome/Edge extension blocks HTTP/HTTPS resources and performs
-reversible local page cleanup without a domain subscription or desktop service.
-Extract `nullad-browser-extension.zip`, load it unpacked, then explicitly grant
-web resource access from the popup. It starts disabled and changes no proxy,
-DNS, certificates or request headers. The native listener can explicitly chain
-to an unauthenticated HTTP/SOCKS5 endpoint with `--upstream-proxy`; upstream
-failure never falls back to direct routing. Existing system proxy takeover needs
-an explicit upstream; use the independent extension to preserve PAC behavior.
+NullAD ships a **44,442-domain** advertising and tracking snapshot derived from
+official EasyList/EasyPrivacy sources at commit
+`129e63db3096f78e6dc94ac7ca6a15e27b5d1b79` (2026-10-05). The separate rule data is
+CC BY-SA 3.0; application code remains MIT. No runtime subscription download is
+needed. The native defaults load **44,607 rules**: 165 base rules plus this domain
+snapshot. See [sources, extraction and licensing](rules/README.md).
 
-With no lists, the test site's four cosmetic/script checks pass: Off → Balanced
-→ Off produced **16 → 30 → 16 /132**. A separate run combining the unchanged 232
-bundled rules and the existing HTTP proxy produced **60/132**. Totals include
-independent network failures. **Not every ad is blocked, and not every proxy
-product/version is verified.** Edge direct/HTTP/SOCKS5 fixtures pass; production
-optional permission-dialog interaction and Chrome runtime remain Unknown.
-See [usage and limits](docs/no-subscription.md), [new acceptance](docs/heuristic-validation.md)
-and [measured cost](docs/performance.md).
+Desktop/CLI enable the bundled lists and Balanced local detection by default.
+They can run independently or together:
+
+| Configuration | Desktop | CLI `check` / `serve` |
+|---|---|---|
+| Rules only | Keep lists enabled; save heuristic mode Off | `--heuristic off` |
+| Local detection only | Disable every list; keep a detection mode enabled | `--no-lists --heuristic balanced` |
+| Both | Keep lists and a detection mode enabled | Defaults, or `--heuristic balanced` |
+
+The independent Chrome/Edge extension **0.2.0** uses the same domain snapshot and
+reversible page cleanup. Both layer checkboxes are initially selected, while
+activation starts **Off**. Extract `nullad-browser-extension.zip`, load it
+unpacked, select the layers, and click a page/all-sites enable button to apply
+them and grant HTTP/HTTPS resource access. Changing all-sites layers preserves
+site allowances; explicitly enabling this page resumes protection for its host.
+Conservative/Balanced changes the heuristic layer, not the domain snapshot.
+The snapshot becomes 87 browser DNR groups; the extension downloads no lists and
+changes no proxy, DNS, certificates or request headers.
+
+The native listener can explicitly chain to an unauthenticated HTTP/SOCKS5
+endpoint with `--upstream-proxy`; upstream failure never falls back to direct
+routing. Existing system proxy takeover needs an explicit upstream; the
+independent extension preserves the existing PAC route.
+
+The current Edge target-site sequence was **Off 16/132 → heuristics only 30 →
+rules only 21 → both 33 → Off 16**. The combined run recorded 15 client-blocked
+requests and passed the two script/two cosmetic checks. Totals also include
+independent network failures. New native checks confirm packaged 44,607-rule
+loading, disabled-list re-enabling, list-free SDK blocking and normal/rule-blocked
+traffic. Native rules + extension + an existing local HTTP upstream produced
+**56/132** twice; this setup has no matched old-232-rule control. This round's
+native normal-close acceptance is **Unknown** because visible QA was stopped.
+Earlier 232-rule / **60/132** and zero-list **16 → 30 → 16** runs are historical
+results from a different setup, not evidence of a measured before/after gain.
+No universal blocking or proxy-version acceptance is claimed. See
+[usage and limits](docs/no-subscription.md),
+[enhanced acceptance](docs/enhanced-validation.md),
+[earlier acceptance](docs/heuristic-validation.md) and
+[measured cost](docs/performance.md).
 
 ```powershell
 node --test extension/tests/*.test.cjs
@@ -32,9 +61,11 @@ node --test extension/tests/*.test.cjs
 .\target\release\nullad-cli.exe serve --no-lists --upstream-proxy http://127.0.0.1:7890
 ```
 
-The endpoint is an example; use your proxy software's actual port. Desktop/CLI
-default to Balanced local detection, which can be disabled. Bundled semantic
-conditions do not guarantee universal recognition; maintained lists remain useful.
+The endpoint is an example; use your proxy software's actual port. Local
+detection now recognizes specific third-party ad SDK loaders and advertising
+delivery paths; the browser also reads short multilingual text/ARIA labels.
+These signals and curated domain data have different coverage and can still
+produce false positives.
 
 ## Historical Windows acceptance (before local detection)
 
@@ -119,6 +150,7 @@ NullAD-cli/
   lists/
     nullad-base.txt
     nullad-hosts.txt
+    THIRD_PARTY_NOTICES.md
 ```
 
 The CLI finds default lists in `./lists`, then beside the executable. Use
@@ -190,6 +222,14 @@ configuration.
 
 ## Rules and loading
 
+`nullad-hosts.txt` contains the 44,442-domain snapshot; the existing base list
+remains separate. EasyList covers advertising, while EasyPrivacy also covers
+analytics, tracking and telemetry. Telemetry is not synonymous with advertising.
+The snapshot imports only unconditional domain anchors, keeps conditional rules
+out, and excludes domains affected by literal-host exceptions. It is a domain
+subset, not execution of every EasyList/EasyPrivacy rule. See
+[the reproducible data process](rules/README.md).
+
 Supported rule forms include domain anchors (`||domain^`), start/end anchors,
 separator markers, wildcards, exceptions (`@@`), regex literals and hosts-file
 entries. Resource-type, third-party, domain, match-case and important options
@@ -206,9 +246,11 @@ Malformed rules are quarantined. The desktop loader parses accepted content
 once with its configured list ID and reuses one HTTP client. Failed reads,
 zero-rule updates, HTML responses and excessive remote-list shrinkage do not
 replace the last valid rules for the **same list ID and source**. Changing a
-source does not reuse a different source's cached rules. Disabling every list
-explicitly installs an empty set. A reload started against obsolete settings
-cannot publish over a newer configuration.
+source does not reuse a different source's cached rules. Disabled lists remain
+in the desktop catalog so they can be enabled again; displayed cached counts
+refer only to the same ID and source. Disabling every list explicitly installs
+an empty rule set, while enabled local detection continues. A reload started
+against obsolete settings cannot publish over a newer configuration.
 
 ## Recovery and platform boundaries
 
@@ -281,6 +323,7 @@ throughput, complete Adblock Plus conformance, or another machine's performance.
 | `nullad-core` | Settings, runtime status, list loading and restoration reports |
 | `nullad-cli` | `check`, `load`, `bench` and `serve` |
 | `nullad-desktop` + `ui/` | Tauri shell, IPC commands, tray and interface |
+| `extension/` | Independent browser domain DNR, request heuristics and reversible DOM cleanup |
 
 The engine is shared across the CLI and desktop. The desktop owns asynchronous
 listener lifecycle and task cancellation; it delegates system changes and
@@ -288,4 +331,8 @@ matching to the appropriate layers.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Application code: [MIT](LICENSE). The derived domain snapshot is independently
+[CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/), with attribution
+to the EasyList authors. Retain the data's license and change notices when
+redistributing it; see [rule-data notices](lists/THIRD_PARTY_NOTICES.md) and
+[official upstream licensing](https://easylist.to/pages/licence.html).

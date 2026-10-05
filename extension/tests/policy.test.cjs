@@ -37,11 +37,39 @@ test("tab scope and immediate allowed-tab rules are isolated and higher priority
   const result = policy.sessionRules(settings, { 3:{ host:"news.example", mode:"balanced" } }, [{id:3,url:"https://news.example"},{id:4,url:"https://allowed.example"},{id:5,url:"https://sub.allowed.example"}]);
   assert.ok(result.rules.filter((rule) => rule.action.type === "block").every((rule) => rule.condition.tabIds[0] === 3));
   assert.deepEqual(result.activeTabs,[3]);
-  assert.equal(result.rules.find((rule) => rule.action.type === "allow").condition.tabIds[0],4);
+  assert.equal(result.rules.find((rule) => rule.action.type === "allow" && rule.priority === 1000).condition.tabIds[0],4);
   assert.equal(policy.sessionRules(settings, {}, []).rules.length,0);
 });
 test("settings normalize bad modes and store exact valid hostnames without duplicates", () => {
-  assert.deepEqual(policy.normalizeSettings({mode:"unsafe",allowSites:["example.com","example.com","*.example.com","example.com:443","a/b","[::1]"],language:"unknown"}), {mode:"off",preferredMode:"conservative",allowSites:["example.com","[::1]"],language:"zh-CN"});
+  assert.deepEqual(policy.normalizeSettings({mode:"unsafe",allowSites:["example.com","example.com","*.example.com","example.com:443","a/b","[::1]"],language:"unknown"}), {mode:"off",preferredMode:"conservative",rulesEnabled:true,heuristicsEnabled:true,allowSites:["example.com","[::1]"],language:"zh-CN"});
+});
+function decision(url, type, settings, thirdParty = false) {
+  const host = new URL(url).hostname;
+  const matching = policy.networkRules("balanced", settings).filter(rule => rule.condition.resourceTypes.includes(type) && (rule.condition.requestDomains ? rule.condition.requestDomains.some(domain => host === domain || host.endsWith("." + domain)) : matches(rule, url, type, thirdParty)));
+  return matching.sort((a,b) => b.priority - a.priority)[0]?.action.type || "allow";
+}
+test("independent rule and heuristic layers cooperate and protect documentation", () => {
+  const rules = policy.normalizeSettings({rulesEnabled:true,heuristicsEnabled:false});
+  const heuristic = policy.normalizeSettings({rulesEnabled:false,heuristicsEnabled:true});
+  const both = policy.normalizeSettings({});
+  for (const settings of [rules, both]) assert.equal(decision("https://doubleclick.com/arbitrary.bin", "image", settings), "block");
+  assert.equal(decision("https://doubleclick.com/arbitrary.bin", "image", heuristic), "allow");
+  for (const settings of [heuristic, both]) assert.equal(decision("https://clean.example/js/prebid.min.js", "script", settings, true), "block");
+  assert.equal(decision("https://clean.example/js/prebid.min.js", "script", rules, true), "allow");
+  for (const url of ["https://clean.example/docs/ads.js", "https://clean.example/login/prebid.js", "https://clean.example/oauth/ads/serve"]) assert.equal(decision(url,"script",both,true),"allow");
+  assert.equal(decision("https://doubleclick.com/docs/example.js","script",both,true),"block");
+  assert.equal(decision("https://clean.example/gpt.js","script",heuristic,true),"allow");
+  assert.equal(decision("https://clean.example/tag/js/gpt.js","script",heuristic,true),"block");
+  assert.equal(decision("https://clean.example/tag/js/gpt.js","script",heuristic,false),"allow");
+  assert.equal(decision("https://clean.example/prebid.js","main_frame",both,true),"allow");
+});
+test("bundled domains are partitioned without regex expansion or discarded entries", () => {
+  const bundled = require("../domain-rules.js"), rules = policy.domainRules(42);
+  assert.deepEqual(rules.flatMap(rule=>rule.condition.requestDomains),bundled.domains);
+  assert.ok(rules.length < 100 && rules.every(rule=>rule.condition.requestDomains.length <= 512 && rule.condition.tabIds[0] === 42 && !rule.condition.regexFilter));
+  assert.equal(new Set(bundled.domains).size,bundled.metadata.domain_count);
+  assert.ok(!bundled.domains.includes("graph.facebook.com"));
+  assert.ok(!bundled.domains.includes("device-provisioning.googleapis.com"));
 });
 test("manifest uses optional hosts, local CSP and no proxy/certificate/network-download permission", () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname,"../manifest.json"),"utf8"));

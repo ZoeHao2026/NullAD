@@ -47,3 +47,40 @@ test("late initial settings failure cannot overwrite a successful direct configu
   listener({type:"CONFIGURE",mode:"balanced"},{id:"fixture"},()=>{});rejectConfig(new Error("worker asleep"));await new Promise(resolve=>setImmediate(resolve));
   assert.equal(context.__nulladLocalController.stats().mode,"balanced");context.__nulladLocalController.configure("off");
 });
+test("child label recycling restores its hidden container and later ad reuse is detected again",()=>{
+  const f=fixture(),ad=f.element("div",{class:"ad-slot"}),badge=f.element("span",{},"Publicité",ad);f.element("img",{},"",ad);
+  const controller=createController(f.document,f.environment);controller.configure("conservative");f.drain();assert.equal(ad.getAttribute(marker),"nullad");
+  badge.firstChild.nodeValue="Account settings";f.observers[0].emit([{type:"characterData",target:badge.firstChild}]);f.drain();assert.equal(ad.hasAttribute(marker),false);assert.equal(controller.stats().hidden,0);
+  badge.firstChild.nodeValue="広告";f.observers[0].emit([{type:"characterData",target:badge.firstChild}]);f.drain();assert.equal(ad.getAttribute(marker),"nullad");
+  controller.restoreAll();badge.firstChild.nodeValue="Sponsored";f.observers[0].emit([{type:"characterData",target:badge.firstChild}]);f.drain();assert.equal(ad.hasAttribute(marker),false);
+});
+test("child aria label, disabled marker and newly interactive role changes are observed",()=>{
+  const f=fixture(),ad=f.element("div",{class:"ad-placement"}),badge=f.element("div",{"aria-label":"광고"},"",ad);f.element("img",{},"",ad);
+  const controller=createController(f.document,f.environment);controller.configure("conservative");f.drain();assert.equal(ad.getAttribute(marker),"nullad");
+  badge.setAttribute("aria-label","Account settings");f.observers[0].emit([{type:"attributes",target:badge}]);f.drain();assert.equal(ad.hasAttribute(marker),false);
+  badge.setAttribute("aria-label","Anzeige");f.observers[0].emit([{type:"attributes",target:badge}]);f.drain();assert.equal(ad.getAttribute(marker),"nullad");
+  badge.setAttribute("role","navigation");f.observers[0].emit([{type:"attributes",target:badge}]);f.drain();assert.equal(ad.hasAttribute(marker),false);
+  const attributes=f.observers[0].options.attributeFilter;for(const value of ["aria-labelledby","aria-description","role","contenteditable","data-sponsored","data-ad-placement","hidden","style"])assert.ok(attributes.includes(value),value);
+});
+test("infinite scroll batches preserve normal siblings while detecting new multilingual containers",()=>{
+  const f=fixture(),feed=f.element("div"),controller=createController(f.document,f.environment);controller.configure("balanced");f.drain();const ads=[],normal=[];
+  for(let i=0;i<60;i++){
+    const ad=f.element("div",{},"",feed);f.element("span",{},i%2?"广告":"Publicité",ad);f.element("img",{},"",ad);ads.push(ad);
+    normal.push(f.element("div",{},"Normal content card "+i,feed));
+  }
+  f.observers[0].emit([{type:"childList",target:feed,addedNodes:[...ads,...normal]}]);f.drain();
+  assert.ok(ads.every(value=>value.getAttribute(marker)==="nullad"));assert.ok(normal.every(value=>!value.hasAttribute(marker)));assert.equal(feed.hasAttribute(marker),false);
+  controller.configure("off");assert.ok(ads.every(value=>!value.hasAttribute(marker)));
+});
+test("a recycled child within the bounded four-parent notification range restores the slot",()=>{
+  const f=fixture(),ad=f.element("div",{class:"ad-slot"});let parent=ad;for(let i=0;i<3;i++)parent=f.element("div",{},"",parent);
+  const badge=f.element("span",{},"广告",parent);f.element("img",{},"",ad);const controller=createController(f.document,f.environment);controller.configure("conservative");f.drain();assert.equal(ad.getAttribute(marker),"nullad");
+  badge.firstChild.nodeValue="Normal";f.observers[0].emit([{type:"characterData",target:badge.firstChild}]);f.drain();assert.equal(ad.hasAttribute(marker),false);
+});
+test("false/off advertising markers on a reused slot remove their prior hiding evidence",()=>{
+  const f=fixture(),ad=f.element("div",{"data-sponsored":"true"});f.element("img",{},"",ad);
+  const controller=createController(f.document,f.environment);controller.configure("balanced");f.drain();assert.equal(ad.getAttribute(marker),"nullad");
+  ad.setAttribute("data-sponsored","off");f.observers[0].emit([{type:"attributes",target:ad}]);f.drain();assert.equal(ad.hasAttribute(marker),false);
+  ad.setAttribute("data-sponsored","true");f.observers[0].emit([{type:"attributes",target:ad}]);f.drain();assert.equal(ad.getAttribute(marker),"nullad");
+  ad.setAttribute("data-sponsored","false");f.observers[0].emit([{type:"attributes",target:ad}]);f.drain();assert.equal(ad.hasAttribute(marker),false);
+});

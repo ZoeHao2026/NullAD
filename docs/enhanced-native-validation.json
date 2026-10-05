@@ -1,0 +1,28 @@
+{
+  "bundledRules": 44607,
+  "quarantined": 0,
+  "source": "final NSIS build executable, adjacent bundled resources, working directory outside repo",
+  "defaults": {
+    "language": "zh-CN",
+    "heuristic": "balanced",
+    "proxyTakeover": false,
+    "dns": false,
+    "upstream": null
+  },
+  "disabledCatalogRetained": true,
+  "reenableViaUI": true,
+  "realTraffic": {
+    "normalStatus": 200,
+    "curatedBlock": 403,
+    "zeroListSdkBlock": 403
+  },
+  "records": 3,
+  "fourPages": true,
+  "chineseEnglish": true,
+  "darkLight": true,
+  "pendingChanges": 0,
+  "closePort": 59201,
+  "errors": [],
+  "stopPortReleased": true,
+  "normalClose": "Unknown: user stopped Computer Use with physical Escape"
+}

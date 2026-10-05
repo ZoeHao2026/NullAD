@@ -1,0 +1,244 @@
+{
+  "browser": "Edge 154, isolated Playwright profile",
+  "grant": "test-only manifest statically grants same optional host origins; native permission dialog remains unverified",
+  "bundledDomains": 44442,
+  "normalProxySettingsChanged": false,
+  "runCount": 5,
+  "runs": [
+    {
+      "url": "https://adblock.turtlecute.org/",
+      "title": "Ad Blocker Test | Check if Your Ad Blocker Works",
+      "total": 132,
+      "blocked": 16,
+      "unblocked": 116,
+      "staticHidden": false,
+      "dynamicHidden": false,
+      "scripts": {
+        "ads": false,
+        "pagead": false
+      },
+      "hiddenMarkers": 0,
+      "label": "off",
+      "blockedByClient": [],
+      "percent": 12.121212121212121
+    },
+    {
+      "url": "https://adblock.turtlecute.org/",
+      "title": "Ad Blocker Test | Check if Your Ad Blocker Works",
+      "total": 132,
+      "blocked": 30,
+      "unblocked": 102,
+      "staticHidden": true,
+      "dynamicHidden": true,
+      "scripts": {
+        "ads": true,
+        "pagead": true
+      },
+      "hiddenMarkers": 2,
+      "label": "heuristics-only",
+      "blockedByClient": [
+        {
+          "url": "https://adblock.turtlecute.org/js/widget/ads.js",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://adblock.turtlecute.org/js/pagead.js",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://adservice.google.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://ads.linkedin.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://ads.pinterest.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://ads.youtube.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://ads.tiktok.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://ads.yahoo.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://adserver.unityads.unity3d.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://adx.ads.oppomobile.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://ck.ads.oppomobile.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://data.ads.oppomobile.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        }
+      ],
+      "percent": 22.727272727272727,
+      "layers": {
+        "rulesEnabled": false,
+        "heuristicsEnabled": true
+      },
+      "installedNetworkRules": 25,
+      "hidden": 2
+    },
+    {
+      "url": "https://adblock.turtlecute.org/",
+      "title": "Ad Blocker Test | Check if Your Ad Blocker Works",
+      "total": 132,
+      "blocked": 21,
+      "unblocked": 111,
+      "staticHidden": false,
+      "dynamicHidden": false,
+      "scripts": {
+        "ads": false,
+        "pagead": false
+      },
+      "hiddenMarkers": 0,
+      "label": "rules-only",
+      "blockedByClient": [
+        {
+          "url": "https://ads.linkedin.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://ads.yahoo.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://analytics.yahoo.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://geo.yahoo.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://samsungads.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        }
+      ],
+      "percent": 15.909090909090908,
+      "layers": {
+        "rulesEnabled": true,
+        "heuristicsEnabled": false
+      },
+      "installedNetworkRules": 87,
+      "hidden": 0
+    },
+    {
+      "url": "https://adblock.turtlecute.org/",
+      "title": "Ad Blocker Test | Check if Your Ad Blocker Works",
+      "total": 132,
+      "blocked": 33,
+      "unblocked": 99,
+      "staticHidden": true,
+      "dynamicHidden": true,
+      "scripts": {
+        "ads": true,
+        "pagead": true
+      },
+      "hiddenMarkers": 2,
+      "label": "both",
+      "blockedByClient": [
+        {
+          "url": "https://adblock.turtlecute.org/js/widget/ads.js",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://adblock.turtlecute.org/js/pagead.js",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://adservice.google.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://ads.linkedin.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://ads.pinterest.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://ads.youtube.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://ads.tiktok.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://ads.yahoo.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://analytics.yahoo.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://geo.yahoo.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://adserver.unityads.unity3d.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://adx.ads.oppomobile.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://ck.ads.oppomobile.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://data.ads.oppomobile.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "https://samsungads.com/fakepage.html",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        }
+      ],
+      "percent": 25,
+      "layers": {
+        "rulesEnabled": true,
+        "heuristicsEnabled": true
+      },
+      "installedNetworkRules": 112,
+      "hidden": 2
+    },
+    {
+      "url": "https://adblock.turtlecute.org/",
+      "title": "Ad Blocker Test | Check if Your Ad Blocker Works",
+      "total": 132,
+      "blocked": 16,
+      "unblocked": 116,
+      "staticHidden": false,
+      "dynamicHidden": false,
+      "scripts": {
+        "ads": false,
+        "pagead": false
+      },
+      "hiddenMarkers": 0,
+      "label": "off-again",
+      "blockedByClient": [],
+      "percent": 12.121212121212121
+    }
+  ],
+  "interpretation": "Network failures/timeouts affect the total; compare four functional checks and ERR_BLOCKED_BY_CLIENT evidence separately."
+}

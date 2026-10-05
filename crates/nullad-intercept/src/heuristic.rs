@@ -197,35 +197,118 @@ fn protected_path(path: &str) -> bool {
             path,
             &[
                 "docs",
+                "doc",
                 "documentation",
+                "example",
                 "examples",
                 "tutorial",
+                "tutorials",
+                "auth",
+                "oauth",
+                "oauth2",
+                "authorize",
+                "authentication",
                 "login",
                 "signin",
+                "sign-in",
+                "signup",
+                "sign-up",
+                "logout",
+                "signout",
+                "account",
+                "accounts",
+                "session",
+                "sessions",
                 "checkout",
                 "payment",
+                "payments",
+                "billing",
+                "purchase",
+                "cart",
                 "captcha",
+                "recaptcha",
             ],
         )
 }
 
 fn ad_query_schema(query: &str) -> bool {
     let mut placement = false;
+    let mut generic_placement = false;
     let mut creative = false;
+    let mut specific_creative = false;
     for parameter in query.split('&').take(64) {
-        let key = parameter.split('=').next().unwrap_or("");
+        let Some((key, value)) = parameter.split_once('=') else {
+            continue;
+        };
+        if value.trim().is_empty() {
+            continue;
+        }
         let key = decode_unreserved(key);
         match key.as_ref() {
-            "adslot" | "ad_slot" | "adunit" | "ad_unit" | "adformat" | "ad_format" => {
-                placement = true
+            "adslot" | "ad_slot" | "adunit" | "ad_unit" | "adformat" | "ad_format"
+            | "ad_placement" | "ad_placement_id" => placement = true,
+            "placementid" | "placement_id" => generic_placement = true,
+            "creativeid" | "creative_id" | "adid" | "ad_id" => {
+                creative = true;
+                specific_creative = true;
             }
-            "creativeid" | "creative_id" | "adid" | "ad_id" | "campaignid" | "campaign_id" => {
-                creative = true
-            }
+            "campaignid" | "campaign_id" => creative = true,
             _ => {}
         }
     }
-    placement && creative
+    (placement && creative) || (generic_placement && specific_creative)
+}
+
+fn ad_sdk_script(path: &str) -> bool {
+    // Identifiable SDK filenames, not host reputation or generic words such as
+    // gpt/analytics/ads. GPT and IMA also require their published loader paths:
+    // developers.google.com/publisher-tag/guides/general-best-practices
+    // developers.google.com/interactive-media-ads/docs/sdks/html5/client-side/get-started
+    // docs.prebid.org/prebid/prebidjs.html
+    let file = path.rsplit('/').next().unwrap_or_default();
+    matches!(
+        file,
+        "adsbygoogle.js" | "adsbygoogle.min.js" | "prebid.js" | "prebid.min.js"
+    ) || path.ends_with("/tag/js/gpt.js")
+        || path.ends_with("/js/sdkloader/ima3.js")
+}
+
+fn ad_delivery_path(path: &str) -> bool {
+    // Require a namespace/action pair. Bid, auction, click and display alone
+    // occur in normal commerce and UI APIs and never supply this signal.
+    let namespaces = [
+        "ads",
+        "ad",
+        "adserver",
+        "adserving",
+        "ad-delivery",
+        "advertising",
+        "pagead",
+        "openrtb",
+        "openrtb2",
+    ];
+    let actions = [
+        "serve",
+        "show",
+        "render",
+        "display",
+        "impression",
+        "click",
+        "delivery",
+        "auction",
+        "bid",
+        "bids",
+        "request",
+    ];
+    let mut namespace_before = false;
+    for segment in path.split('/').filter(|segment| !segment.is_empty()) {
+        let stem = segment.split('.').next().unwrap_or(segment);
+        if namespace_before && actions.contains(&stem) {
+            return true;
+        }
+        namespace_before = namespaces.contains(&stem);
+    }
+    false
 }
 
 fn subresource(resource: ResourceType, path: &str) -> bool {
@@ -274,32 +357,77 @@ pub(crate) fn detect(
         });
     }
     let ad_host = advertising_host(&request.host);
-    let strong_path = has_path_token(
-        &path,
-        &[
-            "adserver",
-            "ad-serving",
-            "adserving",
-            "ad-delivery",
-            "adrequest",
-            "ad-request",
-            "ad-loader",
-            "ad-banner",
-            "advertisement",
-            "vast",
-            "vmap",
-        ],
-    );
+    let delivery = ad_delivery_path(&path);
+    let strong_path = delivery
+        || has_path_token(
+            &path,
+            &[
+                "adserver",
+                "ad-serving",
+                "adserving",
+                "ad-delivery",
+                "adrequest",
+                "ad-request",
+                "ad_request",
+                "ad-loader",
+                "ad_loader",
+                "ad-banner",
+                "ad_banner",
+                "ad-impression",
+                "ad_impression",
+                "ad-auction",
+                "ad_auction",
+                "ad-bid",
+                "ad_bid",
+                "advertisement",
+                "vast",
+                "vmap",
+            ],
+        );
     let weak_path = has_path_token(&path, &["ads", "ad", "adslot", "ad-unit", "banner"]);
     let schema = ad_query_schema(query);
     let subresource = subresource(request.resource_type, &path);
     let third_party = request.page_host.is_some() && request.third_party;
-    // Conservative HTTP decisions require both explicit host/path advertising
-    // semantics and a third-party subresource. Missing context is not fabricated.
+    let sdk = request.resource_type.intersects(ResourceType::Script) && ad_sdk_script(&path);
+    // Both modes require observed third-party context for SDK filenames. A
+    // same-site or context-free file is not treated as an advertising SDK just
+    // because it shares a loader name. Conservative delivery decisions also
+    // require a third-party subresource rather than fabricated page context.
     if mode == HeuristicMode::Conservative {
-        return (ad_host && strong_path && subresource && third_party).then_some(Detection {
+        return (third_party
+            && (sdk || (subresource && (delivery || (ad_host && (strong_path || schema))))))
+            .then_some(Detection {
+                reason: "heuristic_ad_request",
+                score: 95,
+            });
+    }
+    if (sdk && third_party)
+        || (subresource
+            && ((delivery && (third_party || ad_host || schema))
+                || (schema && (third_party || ad_host))))
+    {
+        return Some(Detection {
             reason: "heuristic_ad_request",
-            score: 95,
+            score: 90,
+        });
+    }
+    // A cross-site ad-labelled host corroborates active script/frame/beacon
+    // loading. Ordinary XHR, image and media URLs still need advertising paths
+    // or structured ad parameters; generic metrics/telemetry hosts never count.
+    if !strong_path
+        && !weak_path
+        && !schema
+        && ad_host
+        && third_party
+        && request.resource_type.intersects(
+            ResourceType::Script
+                .union(ResourceType::Subdocument)
+                .union(ResourceType::Ping),
+        )
+    {
+        return Some(Detection {
+            reason: "heuristic_ad_request",
+            score: 80,
         });
     }
     let score: u8 = (if ad_host { 30 } else { 0 })
@@ -507,6 +635,499 @@ mod tests {
                 ),
                 "{url}"
             );
+        }
+    }
+
+    #[test]
+    fn advertising_sdks_need_exact_filename_path_type_and_third_party_context() {
+        for mode in [HeuristicMode::Conservative, HeuristicMode::Balanced] {
+            for path in [
+                "/js/adsbygoogle.js",
+                "/js/adsbygoogle.min.js",
+                "/prebid.js",
+                "/bundle/prebid.min.js",
+                "/tag/js/gpt.js",
+                "/js/sdkloader/ima3.js",
+            ] {
+                let url = format!("https://cdn.vendor.example{path}?v=7");
+                assert!(
+                    detected(
+                        &url,
+                        ResourceType::Script,
+                        Some("https://publisher.example/"),
+                        DecisionSource::Proxy,
+                        mode
+                    ),
+                    "{path} {mode:?}"
+                );
+                for page in [None, Some("https://www.vendor.example/")] {
+                    assert!(
+                        !detected(
+                            &url,
+                            ResourceType::Script,
+                            page,
+                            DecisionSource::Proxy,
+                            mode
+                        ),
+                        "{path} {page:?} {mode:?}"
+                    );
+                }
+                for resource in [
+                    ResourceType::Document,
+                    ResourceType::Stylesheet,
+                    ResourceType::Image,
+                    ResourceType::Xhr,
+                    ResourceType::Other,
+                ] {
+                    assert!(
+                        !detected(
+                            &url,
+                            resource,
+                            Some("https://publisher.example/"),
+                            DecisionSource::Proxy,
+                            mode
+                        ),
+                        "{path} {resource:?} {mode:?}"
+                    );
+                }
+            }
+            for path in [
+                "/gpt.js",
+                "/tag/gpt.js",
+                "/js/gpt.js",
+                "/sdk/ima3.js",
+                "/js/sdkloader/ima3.js.map",
+                "/prebidder.js",
+                "/prebid.js.map",
+                "/prebid.js.txt",
+                "/prebid-client.js",
+                "/myadsbygoogle.js",
+                "/script.js?next=/prebid.js",
+                "/js/%2570rebid.js",
+            ] {
+                assert!(
+                    !detected(
+                        &format!("https://cdn.vendor.example{path}"),
+                        ResourceType::Script,
+                        Some("https://publisher.example/"),
+                        DecisionSource::Proxy,
+                        mode
+                    ),
+                    "{path} {mode:?}"
+                );
+            }
+        }
+        assert!(!detected(
+            "https://ads.vendor.example/tag/js/gpt.js",
+            ResourceType::Script,
+            Some("https://publisher.vendor.example/"),
+            DecisionSource::Proxy,
+            HeuristicMode::Balanced
+        ));
+        assert!(detected(
+            "https://cdn.vendor.example/%70rebid.js",
+            ResourceType::Script,
+            Some("https://publisher.example/"),
+            DecisionSource::Proxy,
+            HeuristicMode::Balanced
+        ));
+    }
+
+    #[test]
+    fn delivery_and_bidding_paths_require_advertising_namespaces_and_context() {
+        for path in [
+            "/ads/serve",
+            "/api/ads/render",
+            "/pagead/impression.gif",
+            "/adserver/auction",
+            "/openrtb2/auction",
+            "/openrtb/bid",
+            "/ads/click?ad_slot=one&creative_id=two",
+        ] {
+            let url = format!("https://cdn.vendor.example{path}");
+            for mode in [HeuristicMode::Conservative, HeuristicMode::Balanced] {
+                assert!(
+                    detected(
+                        &url,
+                        ResourceType::Xhr,
+                        Some("https://publisher.example/"),
+                        DecisionSource::Proxy,
+                        mode
+                    ),
+                    "{path} {mode:?}"
+                );
+                assert!(!detected(
+                    &url,
+                    ResourceType::Document,
+                    Some("https://publisher.example/"),
+                    DecisionSource::Proxy,
+                    mode
+                ));
+            }
+        }
+        for path in [
+            "/api/auction",
+            "/api/bid",
+            "/products/display",
+            "/ui/render",
+            "/button/click",
+            "/openrtb-doc/auction",
+            "/notads/serve",
+            "/ads/catalog/serve",
+            "/%2561ds/serve",
+            "/%61ds%2fserve",
+            "/api?redirect=/ads/serve",
+        ] {
+            assert!(
+                !detected(
+                    &format!("https://cdn.vendor.example{path}"),
+                    ResourceType::Xhr,
+                    Some("https://publisher.example/"),
+                    DecisionSource::Proxy,
+                    HeuristicMode::Balanced
+                ),
+                "{path}"
+            );
+        }
+        assert!(!detected(
+            "https://cdn.vendor.example/ads/serve",
+            ResourceType::Xhr,
+            None,
+            DecisionSource::Proxy,
+            HeuristicMode::Balanced
+        ));
+        assert!(!detected(
+            "https://cdn.vendor.example/ads/serve",
+            ResourceType::Xhr,
+            Some("https://publisher.vendor.example/"),
+            DecisionSource::Proxy,
+            HeuristicMode::Balanced
+        ));
+        assert!(detected(
+            "https://cdn.vendor.example/ads/serve?placement_id=one&creative_id=two",
+            ResourceType::Xhr,
+            None,
+            DecisionSource::Proxy,
+            HeuristicMode::Balanced
+        ));
+    }
+
+    #[test]
+    fn placement_creative_queries_require_distinct_explicit_keys_with_values() {
+        for query in [
+            "ad_slot=top&creative_id=7",
+            "placement_id=top&ad_id=7",
+            "ad_placement_id=top&campaign_id=7",
+            "%41D_UNIT=top&%43REATIVE_ID=7",
+        ] {
+            assert!(ad_query_schema(query), "{query}");
+            assert!(
+                detected(
+                    &format!("https://cdn.vendor.example/content?{query}"),
+                    ResourceType::Xhr,
+                    Some("https://publisher.example/"),
+                    DecisionSource::Proxy,
+                    HeuristicMode::Balanced
+                ),
+                "{query}"
+            );
+            assert!(!detected(
+                &format!("https://cdn.vendor.example/content?{query}"),
+                ResourceType::Xhr,
+                None,
+                DecisionSource::Proxy,
+                HeuristicMode::Balanced
+            ));
+        }
+        for query in [
+            "ad_slot=top",
+            "creative_id=7",
+            "ad_slot=top&ad_unit=side",
+            "placement_id=top&campaign_id=7",
+            "ad_slot=&creative_id=7",
+            "ad_slot=top&creative_id=",
+            "ad_slot&creative_id",
+            "notad_slot=top&creative_id=7",
+            "ad_slot=top&creative_ids=7",
+            "next=ad_slot=top&then=creative_id=7",
+            "%2541D_SLOT=top&creative_id=7",
+        ] {
+            assert!(!ad_query_schema(query), "{query}");
+            assert!(
+                !detected(
+                    &format!("https://cdn.vendor.example/content?{query}"),
+                    ResourceType::Xhr,
+                    Some("https://publisher.example/"),
+                    DecisionSource::Proxy,
+                    HeuristicMode::Balanced
+                ),
+                "{query}"
+            );
+        }
+        let beyond_budget = format!("{}ad_slot=top&creative_id=7", "x=1&".repeat(64));
+        assert!(!ad_query_schema(&beyond_budget));
+    }
+
+    #[test]
+    fn business_paths_navigation_and_hostname_only_sources_keep_their_protection() {
+        for mode in [HeuristicMode::Conservative, HeuristicMode::Balanced] {
+            for path in [
+                "/docs/prebid.js",
+                "/documentation/ads/serve",
+                "/examples/tag/js/gpt.js",
+                "/login/prebid.js",
+                "/oauth/ads/serve",
+                "/oauth2/openrtb/auction",
+                "/auth/js/sdkloader/ima3.js",
+                "/account/ads/serve",
+                "/session/ads/serve",
+                "/payments/ads/serve",
+                "/billing/ads/serve",
+                "/checkout/prebid.js",
+                "/cart/ads/serve",
+                "/captcha/tag/js/gpt.js",
+            ] {
+                assert!(
+                    !detected(
+                        &format!("https://cdn.vendor.example{path}?ad_slot=one&creative_id=two"),
+                        ResourceType::Script,
+                        Some("https://publisher.example/"),
+                        DecisionSource::Proxy,
+                        mode
+                    ),
+                    "{path} {mode:?}"
+                );
+            }
+            for source in [
+                DecisionSource::Dns,
+                DecisionSource::Connect,
+                DecisionSource::Sni,
+            ] {
+                for host in [
+                    "ads.vendor.example",
+                    "metrics.vendor.example",
+                    "telemetry.vendor.example",
+                    "adserver.github.io",
+                    "adservice.pages.dev",
+                ] {
+                    assert!(
+                        !detected(
+                            &format!("https://{host}/tag/js/gpt.js?ad_slot=one&creative_id=two"),
+                            ResourceType::Script,
+                            Some("https://publisher.example/"),
+                            source,
+                            mode
+                        ),
+                        "{host} {source:?} {mode:?}"
+                    );
+                }
+            }
+        }
+        for resource in [ResourceType::Xhr, ResourceType::Image, ResourceType::Media] {
+            assert!(!detected(
+                "https://ads.vendor.example/api/config",
+                resource,
+                Some("https://publisher.example/"),
+                DecisionSource::Proxy,
+                HeuristicMode::Balanced
+            ));
+        }
+        for resource in [
+            ResourceType::Script,
+            ResourceType::Subdocument,
+            ResourceType::Ping,
+        ] {
+            assert!(detected(
+                "https://ads.vendor.example/delivery-config",
+                resource,
+                Some("https://publisher.example/"),
+                DecisionSource::Proxy,
+                HeuristicMode::Balanced
+            ));
+        }
+    }
+
+    #[test]
+    fn new_http_signals_keep_explicit_allow_and_abp_exception_priority() {
+        use crate::EngineHandle;
+        use nullad_engine::{FilterEngine, RuleSetBuilder};
+        use std::sync::Arc;
+        let url = "https://cdn.vendor.example/tag/js/gpt.js";
+        let page = Some("https://publisher.example/");
+        let zero = EngineHandle::new(Arc::new(FilterEngine::new()));
+        let detected = zero.evaluate(url, ResourceType::Script, page, DecisionSource::Proxy);
+        assert!(detected.blocked);
+        assert_eq!(detected.reason.as_deref(), Some("heuristic_ad_request"));
+        assert!(detected.matched_rule.is_none());
+        assert!(detected.matched_rule_ids.is_empty());
+        assert_eq!(zero.stats.proxy_requests(), 0);
+        assert_eq!(zero.engine.stats_snapshot().blocked, 0);
+        assert!(
+            !zero
+                .clone()
+                .with_policy(DetectionPolicy {
+                    mode: HeuristicMode::Off,
+                    allowed_hosts: Vec::new()
+                })
+                .evaluate(url, ResourceType::Script, page, DecisionSource::Proxy)
+                .blocked
+        );
+        let mut builder = RuleSetBuilder::new();
+        builder.add_list_auto("@@||cdn.vendor.example^$script");
+        let handle = EngineHandle::new(Arc::new(FilterEngine::from_rule_set(
+            builder.build().unwrap(),
+        )));
+        let exception = handle.evaluate(url, ResourceType::Script, page, DecisionSource::Proxy);
+        assert!(!exception.blocked);
+        assert!(exception.is_exception());
+        assert_eq!(exception.reason.as_deref(), Some("exception"));
+        let mut builder = RuleSetBuilder::new();
+        builder.add_list_auto("||cdn.vendor.example^$important");
+        let allowed = EngineHandle::new(Arc::new(FilterEngine::from_rule_set(
+            builder.build().unwrap(),
+        )))
+        .with_policy(DetectionPolicy {
+            mode: HeuristicMode::Balanced,
+            allowed_hosts: vec!["vendor.example".into()],
+        })
+        .evaluate(url, ResourceType::Script, page, DecisionSource::Proxy);
+        assert!(!allowed.blocked);
+        assert_eq!(allowed.reason.as_deref(), Some("allow_host"));
+        assert!(allowed.matched_rule.is_none());
+    }
+
+    #[tokio::test]
+    async fn new_sdk_signal_reaches_real_http_decisions_without_subscription_rules() {
+        use crate::{Decision, DecisionSink, EngineHandle, ProxyConfig, ProxyServer};
+        use nullad_engine::{FilterEngine, RuleSetBuilder};
+        use std::sync::{Arc, Mutex};
+        use std::time::Duration;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::{TcpListener, TcpStream};
+        use tokio::sync::watch;
+
+        #[derive(Debug, Default)]
+        struct Collector(Mutex<Vec<Decision>>);
+        impl DecisionSink for Collector {
+            fn record(&self, decision: Decision) {
+                self.0.lock().unwrap().push(decision);
+            }
+        }
+        async fn head(stream: &mut TcpStream) -> String {
+            let mut buffer = Vec::new();
+            while !buffer.ends_with(b"\r\n\r\n") {
+                buffer.push(stream.read_u8().await.unwrap());
+                assert!(buffer.len() < 16384);
+            }
+            String::from_utf8(buffer).unwrap()
+        }
+        for scenario in 0..4 {
+            let upstream = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let endpoint = upstream.local_addr().unwrap();
+            let fixture = if scenario == 0 {
+                None
+            } else {
+                Some(tokio::spawn(async move {
+                    let (mut stream, _) = upstream.accept().await.unwrap();
+                    assert!(head(&mut stream)
+                        .await
+                        .starts_with("GET http://cdn.vendor.example/tag/js/gpt.js HTTP/1.1\r\n"));
+                    stream
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK",
+                        )
+                        .await
+                        .unwrap();
+                    stream.shutdown().await.unwrap();
+                }))
+            };
+            let engine = if scenario < 2 {
+                Arc::new(FilterEngine::new())
+            } else {
+                let mut builder = RuleSetBuilder::new();
+                builder.add_list_auto(if scenario == 2 {
+                    "@@||cdn.vendor.example^$script"
+                } else {
+                    "||cdn.vendor.example^$important"
+                });
+                Arc::new(FilterEngine::from_rule_set(builder.build().unwrap()))
+            };
+            let collector = Arc::new(Collector::default());
+            let handle = EngineHandle::new(engine)
+                .with_policy(DetectionPolicy {
+                    mode: HeuristicMode::Balanced,
+                    allowed_hosts: if scenario == 3 {
+                        vec!["vendor.example".into()]
+                    } else {
+                        Vec::new()
+                    },
+                })
+                .with_sink(collector.clone());
+            let server = Arc::new(
+                ProxyServer::bind(
+                    ProxyConfig {
+                        listen: "127.0.0.1:0".parse().unwrap(),
+                        upstream: Some(format!("http://{endpoint}").parse().unwrap()),
+                        ..Default::default()
+                    },
+                    handle.clone(),
+                )
+                .await
+                .unwrap(),
+            );
+            let address = server.local_addr().unwrap();
+            let (stop, receiver) = watch::channel(false);
+            let serving = tokio::spawn(server.run_until(receiver));
+            let mut client = TcpStream::connect(address).await.unwrap();
+            let destination = if scenario == 1 { "document" } else { "script" };
+            client.write_all(format!("GET http://cdn.vendor.example/tag/js/gpt.js HTTP/1.1\r\nHost: cdn.vendor.example\r\nSec-Fetch-Dest: {destination}\r\nReferer: https://publisher.example/\r\n\r\n").as_bytes()).await.unwrap();
+            let mut reply = String::new();
+            tokio::time::timeout(Duration::from_secs(5), client.read_to_string(&mut reply))
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(
+                reply.starts_with(if scenario == 0 {
+                    "HTTP/1.1 403"
+                } else {
+                    "HTTP/1.1 200"
+                }),
+                "{scenario}: {reply}"
+            );
+            if let Some(fixture) = fixture {
+                tokio::time::timeout(Duration::from_secs(5), fixture)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            }
+            if scenario < 2 {
+                assert_eq!(handle.engine.rule_count(), 0);
+            }
+            {
+                let events = collector.0.lock().unwrap();
+                assert_eq!(events.len(), 1);
+                assert_eq!(events[0].source, DecisionSource::Proxy);
+                assert_eq!(events[0].blocked, scenario == 0);
+                assert_eq!(
+                    events[0].reason.as_deref(),
+                    [
+                        Some("heuristic_ad_request"),
+                        None,
+                        Some("exception"),
+                        Some("allow_host")
+                    ][scenario]
+                );
+                assert_eq!(events[0].rule.is_some(), scenario == 2);
+                assert_eq!(events[0].score.is_some(), scenario == 0);
+            }
+            assert_eq!(handle.stats.proxy_requests(), 1);
+            assert_eq!(handle.stats.proxy_blocked(), u64::from(scenario == 0));
+            stop.send(true).unwrap();
+            tokio::time::timeout(Duration::from_secs(5), serving)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
         }
     }
 

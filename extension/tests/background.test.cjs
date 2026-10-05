@@ -22,6 +22,21 @@ test("installation starts off without permission, rules or page injection",async
   assert.deepEqual(f.dynamic(),[]);assert.deepEqual(f.rules(),[]);assert.deepEqual(f.scripts(),[]);assert.deepEqual(f.injection,[]);
   assert.equal((await f.service.handle({type:"STATE",tabId:1})).mode,"off");
 });
+test("layers switch independently, restore DOM and preserve site allowances",async()=>{
+  const f=fixture();f.grant();
+  const enable=(rulesEnabled,heuristicsEnabled)=>f.service.handle({type:"ENABLE",scope:"all",mode:"balanced",tabId:1,rulesEnabled,heuristicsEnabled});
+  await enable(false,true);assert.equal(f.dynamic().some(rule=>rule.condition.requestDomains),false);assert.equal(f.scripts().length,1);
+  await enable(true,false);assert.ok(f.dynamic().some(rule=>rule.condition.requestDomains));assert.equal(f.dynamic().some(rule=>rule.condition.regexFilter),false);assert.equal(f.scripts().length,0);assert.ok(f.messages.slice(-3).every(item=>item.message.mode==="off"));
+  assert.equal((await f.service.handle({type:"GET_CONFIG"},{tab:f.tabs[0]})).mode,"off");
+  const state=await f.service.handle({type:"STATE",tabId:1});assert.equal(state.mode,"balanced");assert.equal(state.ruleData.domain_count,44442);assert.equal(state.installedNetworkRules,f.dynamic().length);
+  await f.service.handle({type:"ALLOW_SITE",tabId:2,allowed:true});
+  await f.service.handle({type:"ALLOW_SITE",tabId:1,allowed:true});
+  await enable(true,true);assert.ok(f.dynamic().some(rule=>rule.condition.requestDomains));assert.ok(f.dynamic().some(rule=>rule.condition.regexFilter));assert.ok(f.local.settings.allowSites.includes("other.example"));
+  assert.ok(f.local.settings.allowSites.includes("news.example"));assert.equal((await f.service.handle({type:"GET_CONFIG"},{tab:f.tabs[0]})).mode,"off");
+  const before=structuredClone(f.dynamic());await assert.rejects(enable(false,false),/at least one/);assert.deepEqual(f.dynamic(),before);
+  await assert.rejects(enable("false",true),/Invalid protection layer/);assert.deepEqual(f.dynamic(),before);
+  await f.service.handle({type:"STOP"});assert.equal(f.dynamic().length,0);assert.equal(f.rules().length,0);assert.equal(f.scripts().length,0);
+});
 test("permission denial rejects enable without publishing false success",async()=>{
   const f=fixture();await assert.rejects(f.service.handle({type:"ENABLE",scope:"all",mode:"balanced",tabId:1}),/not been granted/);
   assert.equal(f.local.settings,undefined);assert.equal(f.dynamic().length,0);

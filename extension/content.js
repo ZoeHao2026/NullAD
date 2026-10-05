@@ -60,7 +60,7 @@
           } else enqueue(record.target.nodeType === 1 ? record.target : record.target.parentElement);
         }
       });
-      observer.observe(scope, { childList:true, subtree:true, attributes:true, attributeFilter:["id", "class", "title", "aria-label", "data-ad", "data-ad-slot", "data-ad-unit", "data-ad-client"], characterData:true });
+      observer.observe(scope, { childList:true, subtree:true, attributes:true, attributeFilter:["id", "class", "title", "aria-label", "aria-description", "aria-labelledby", "role", "contenteditable", "style", "hidden", "href", "src", "data-ad", "data-ad-slot", "data-ad-unit", "data-ad-client", "data-ad-placement", "data-advertisement", "data-sponsored"], characterData:true });
       observers.set(scope, { observer, sheet });
       return true;
     }
@@ -94,6 +94,11 @@
     function enqueue(scope) {
       if (!scope || mode === "off" || scope === style || shadowStyles.has(scope) || dirty.size >= 200) return;
       dirty.add(scope);
+      // Recycled labels can stop looking like candidates. Their hidden parent
+      // still needs a fresh decision when the child's label/role/text changes.
+      for (let depth = 0, parent = scope.parentElement; parent && depth < 4; depth++, parent = parent.parentElement) {
+        if (hidden.has(parent) && dirty.size < 200) dirty.add(parent);
+      }
       if (timer == null) timer = later(() => { timer = null; schedule(); }, 150);
     }
     function configure(next) {

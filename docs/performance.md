@@ -1,6 +1,36 @@
 # Performance validation / 性能实测
 
-## Local detection cost (2026-10-05)
+## Complete bundled lists and enhanced detection (2026-10-05)
+
+The v2 harness loads the real 44,607 bundled rules plus two fixture rules and
+asserts nine fixed cohorts (including SDK, structured ad query, protected path,
+hits, misses and exceptions). Each cohort uses 2,000 warmups and 14,000 measured
+operations. Five independent warmed processes per mode alternate order; separate
+latency and allocation builds produce 30 raw runs. Actual decisions write the
+bounded 500-entry log. [All measurements and hashes](enhanced-performance.json).
+
+| Mode | Engine mixed req/s | Actual decide/log req/s | Mean us | P95 us | Allocations/request | Bytes/request |
+|---|---:|---:|---:|---:|---:|---:|
+| Off | 1,460,905 | 762,353 | 1.312 | 1.8 | 7.75 | 238.375 |
+| Conservative | 1,425,822 | 623,206 | 1.605 | 2.2 | 8.25 | 247.625 |
+| Balanced | 1,407,247 | 647,899 | 1.543 | 1.9 | 8.50 | 252.625 |
+
+These are local decision medians including sampling overhead, not HTTP/DNS
+network throughput. Balanced costs approximately 0.232 us/request in this mixed
+workload and measured throughput is about 15% below Off. Conservative/Balanced
+timing need not be monotonic because branches and machine scheduling differ.
+Engine matching allocates zero per request after warmup for these cohorts; its
+thread-local/caller scratch is reused. Browser DNR/DOM CPU cost is not measured.
+No general latency/accuracy guarantee or performance gain from additional
+detection is claimed. Workload and source data differ from v1 below.
+
+Build/copy the latency and allocation binaries as below, then run the new corpus:
+
+```powershell
+python tests/heuristic-performance.py --binaries ./perf-binaries --bundled --output ./cost.json
+```
+
+## Historical two-rule local detection cost (2026-10-05, before SDK enhancement)
 
 The new default Balanced path performs additional detection. Five independent
 warmed release processes per mode alternate order on the same Windows machine;

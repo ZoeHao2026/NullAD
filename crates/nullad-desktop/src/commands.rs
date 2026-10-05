@@ -71,13 +71,13 @@ pub fn clear_log(state: State<'_, DesktopState>) {
     state.app.state().decisions.clear();
 }
 
-/// Returns the applied filter lists.
+/// Returns every configured filter list, including disabled entries.
 #[tauri::command]
 pub fn list_lists(state: State<'_, DesktopState>) -> Vec<ListInfoDto> {
     state
         .app
-        .status()
-        .lists
+        .state()
+        .list_catalog()
         .into_iter()
         .map(ListInfoDto::from)
         .collect()

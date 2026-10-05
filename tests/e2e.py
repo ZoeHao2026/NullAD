@@ -198,6 +198,10 @@ def main():
     check("bundled lists produce rules", total_rules > 150, f"got {total_rules}")
     check("indexes were built", "trie nodes" in out and "automaton fragments" in out)
 
+    # Removed broad business endpoints must remain allowed by bundled rules.
+    business = subprocess.run([CLI, "check", "http://graph.facebook.com/normal-api", "--heuristic", "off"], cwd=TEST_CWD, capture_output=True, text=True, timeout=60)
+    check("business API is not a blanket blocked host", business.returncode == 0 and "ALLOW" in business.stdout)
+
     print("\n[2] starting the origin server, proxy and DNS sinkhole")
     origin = start_origin()
     upstream, upstream_stop, upstream_thread = start_dns_upstream()
@@ -237,15 +241,15 @@ def main():
         check("coalesced POST body reaches the origin intact", status == 200 and echoed == binary_body)
 
         print("\n[4] blocking through the proxy")
-        # The engine blocks host `graph.facebook.com`, which is in the bundled
+        # The engine blocks host `doubleclick.com`, which is in the bundled
         # hosts list. The request never reaches the network because the block
         # happens before any upstream connection is attempted.
-        status, body = proxy_get("http://graph.facebook.com/track.gif")
+        status, body = proxy_get("http://doubleclick.com/track.gif")
         check("known ad host is blocked", status == 403, f"status {status}")
         check("block response names NullAD", "Blocked by NullAD" in body)
         check(
             "block response cites the matching rule",
-            "graph.facebook.com" in body,
+            "doubleclick.com" in body,
             body[:300],
         )
 
@@ -258,7 +262,7 @@ def main():
 
         # ---------------------------------------------------------------- DNS
         print("\n[5] DNS sinkhole")
-        blocked_response = dns_query(DNS_PORT, "graph.facebook.com")
+        blocked_response = dns_query(DNS_PORT, "doubleclick.com")
         check(
             "blocked domain resolves to a sinkhole answer",
             parse_dns_answer_count(blocked_response) == 1,
@@ -292,7 +296,7 @@ def main():
         # ------------------------------------------------------------ statistics
         print("\n[6] the proxy reported its decisions")
         status_proc = subprocess.run(
-            [CLI, "check", "http://graph.facebook.com/track.gif"],
+            [CLI, "check", "http://doubleclick.com/track.gif"],
             cwd=TEST_CWD,
             capture_output=True,
             text=True,

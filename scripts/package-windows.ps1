@@ -15,7 +15,7 @@ foreach ($value in @($productName, $version)) {
 $installerName = "${productName}_${version}_x64-setup.exe"
 $installer = Join-Path $repository "target/release/bundle/nsis/$installerName"
 $kinds = @("desktop", "cli")
-$extensionFiles = @("manifest.json", "background.js", "policy.js", "detector.js", "content.js", "i18n.js", "popup.html", "popup.js", "popup.css", "options.html", "options.js", "README.md")
+$extensionFiles = @("manifest.json", "background.js", "domain-rules.js", "policy.js", "detector.js", "content.js", "i18n.js", "popup.html", "popup.js", "popup.css", "options.html", "options.js", "README.md", "THIRD_PARTY_NOTICES.md")
 $outputNames = @("nullad-desktop-windows-x64.zip", "nullad-cli-windows-x64.zip", "nullad-browser-extension.zip", $installerName, "SHA256SUMS.txt")
 
 # Validate every input and output before creating a staging or delivery directory.
@@ -26,6 +26,11 @@ $requiredFiles = @(
     (Join-Path $repository "target/release/nullad-cli.exe"),
     (Join-Path $repository "lists/nullad-base.txt"),
     (Join-Path $repository "lists/nullad-hosts.txt"),
+    (Join-Path $repository "lists/THIRD_PARTY_NOTICES.md"),
+    (Join-Path $repository "rules/README.md"),
+    (Join-Path $repository "rules/sources.lock.json"),
+    (Join-Path $repository "rules/metadata.json"),
+    (Join-Path $repository "scripts/update-bundled-rules.py"),
     (Join-Path $repository "docs/windows-validation.md"),
     (Join-Path $repository "docs/performance.md"),
     (Join-Path $repository "README.md"),
@@ -40,7 +45,7 @@ foreach ($path in $requiredFiles) {
         $issues += "Required package input is empty: $path"
     }
 }
-foreach ($directory in @("lists", "docs")) {
+foreach ($directory in @("lists", "docs", "rules")) {
     $path = Join-Path $repository $directory
     if (!(Test-Path -LiteralPath $path -PathType Container)) {
         $issues += "Missing required package directory: $path"
@@ -70,6 +75,16 @@ try {
         Copy-Item -LiteralPath (Join-Path $repository "target/release/nullad-$kind.exe") -Destination $package
         Copy-Item -LiteralPath (Join-Path $repository "lists") -Destination $package -Recurse
         Copy-Item -LiteralPath (Join-Path $repository "docs") -Destination $package -Recurse
+        Copy-Item -LiteralPath (Join-Path $repository "rules") -Destination $package -Recurse
+        $packageScripts = Join-Path $package "scripts"
+        New-Item -ItemType Directory -Path $packageScripts | Out-Null
+        Copy-Item -LiteralPath (Join-Path $repository "scripts/update-bundled-rules.py") -Destination $packageScripts
+        $packageExtension = Join-Path $package "extension"
+        New-Item -ItemType Directory -Path $packageExtension | Out-Null
+        foreach ($name in $extensionFiles) {
+            Copy-Item -LiteralPath (Join-Path $repository "extension/$name") -Destination $packageExtension
+        }
+        Copy-Item -LiteralPath (Join-Path $repository "LICENSE") -Destination $packageExtension
         foreach ($name in @("README.md", "README.zh-CN.md", "LICENSE")) {
             Copy-Item -LiteralPath (Join-Path $repository $name) -Destination $package
         }

@@ -44,27 +44,33 @@ fn cases(mode: HeuristicMode) -> Vec<Case> {
         ),
         (
             "allow_host",
-            "http://adserver.trusted.example/ad-loader.js",
+            "http://adservice.trusted.example/resource.js",
             false,
             false,
         ),
         (
             "host_feature",
-            "http://adserver.vendor.example/resource.js",
+            "http://adservice.vendor.example/resource.js",
             false,
             mode != HeuristicMode::Off,
         ),
         (
             "http_features",
-            "http://ads.vendor.example/banner.gif",
+            "http://cdn.vendor.example/serve?adslot=1&creative_id=2",
             false,
             mode == HeuristicMode::Balanced,
         ),
         (
             "protected",
-            "http://adserver.vendor.example/docs/ad-loader.js",
+            "http://adservice.vendor.example/docs/ad-loader.js",
             false,
             false,
+        ),
+        (
+            "sdk_feature",
+            "http://cdn.example/vendor/prebid.min.js",
+            false,
+            mode != HeuristicMode::Off,
         ),
     ]
     .into_iter()
@@ -122,6 +128,12 @@ fn run() -> anyhow::Result<()> {
     };
     let mut builder = RuleSetBuilder::new();
     builder.add_list_auto("||rules.block.example^\n@@||ads.exception.example^");
+    let bundled = std::env::args().nth(2);
+    if let Some(value) = bundled.as_deref() {
+        anyhow::ensure!(value == "--bundled", "expected --bundled");
+        builder.add_list_auto(include_str!("../../../lists/nullad-base.txt"));
+        builder.add_list_auto(include_str!("../../../lists/nullad-hosts.txt"));
+    }
     let engine = Arc::new(FilterEngine::from_rule_set(builder.build()?));
     let log = Arc::new(DecisionLog::new(DECISION_LOG_CAPACITY));
     let handle = EngineHandle::new(engine.clone())
@@ -161,6 +173,7 @@ fn run() -> anyhow::Result<()> {
         "host_feature",
         "http_features",
         "protected",
+        "sdk_feature",
         "mixed",
     ] {
         let cohort: Vec<_> = cases
@@ -197,9 +210,11 @@ fn run() -> anyhow::Result<()> {
     }
     println!(
         "{}",
-        serde_json::to_string_pretty(&json!({"harness":"heuristic-cost-v1","mode":mode,
+        serde_json::to_string_pretty(
+            &json!({"harness":"heuristic-cost-v2","mode":mode,"bundled":bundled.is_some(),
         "profiling":cfg!(feature="profiling"),"rules":engine.rule_count(),"log_capacity":DECISION_LOG_CAPACITY,
-        "logged_entries":log.len(),"results":results}))?
+        "logged_entries":log.len(),"results":results})
+        )?
     );
     Ok(())
 }

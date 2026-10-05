@@ -39,7 +39,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../../lists/*.txt": "lists/"
+      "../../lists/*.txt": "lists/",
+      "../../lists/THIRD_PARTY_NOTICES.md": "lists/THIRD_PARTY_NOTICES.md"
     },
     "shortDescription": "High-performance cross-platform ad blocker",
     "longDescription": "NullAD filters advertising and tracking at the DNS, connection and HTTP layers, driven by a pure-Rust rule engine with lock-free hot reloading."

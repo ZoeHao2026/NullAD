@@ -1,5 +1,5 @@
 /* Event-driven MV3 worker. Persistent policy is local; per-tab mode is session-only. */
-if (typeof importScripts === "function") importScripts("policy.js");
+if (typeof importScripts === "function") importScripts("domain-rules.js", "policy.js");
 (function (root) {
   "use strict";
   const policy = typeof module !== "undefined" && module.exports ? require("./policy.js") : root.NullADPolicy;
@@ -37,7 +37,7 @@ if (typeof importScripts === "function") importScripts("policy.js");
     async function apply(data, hasAccess) {
       required();
       const tabs = await api.tabs.query({});
-      const dynamic = hasAccess && data.settings.mode !== "off" ? [...policy.blockRules(data.settings.mode), ...policy.allowRules(data.settings.allowSites)] : [];
+      const dynamic = hasAccess && data.settings.mode !== "off" ? [...policy.networkRules(data.settings.mode, data.settings), ...policy.allowRules(data.settings.allowSites)] : [];
       const session = hasAccess ? policy.sessionRules(data.settings, data.pages, tabs).rules : [];
       const regexes = [...new Set([...dynamic, ...session].map((rule) => rule.condition.regexFilter).filter(Boolean))];
       for (const regex of regexes) {
@@ -56,7 +56,7 @@ if (typeof importScripts === "function") importScripts("policy.js");
       }
       try {
         const registered = await api.scripting.getRegisteredContentScripts();
-        const active = hasAccess && (data.settings.mode !== "off" || Object.keys(data.pages).length > 0);
+        const active = hasAccess && data.settings.heuristicsEnabled && (data.settings.mode !== "off" || Object.keys(data.pages).length > 0);
         if (active && !registered.some((script) => script.id === "nullad-local")) {
           await api.scripting.registerContentScripts([{ id:"nullad-local", matches:policy.origins, js:["detector.js", "content.js"], runAt:"document_idle", allFrames:true, world:"ISOLATED", persistAcrossSessions:true }]);
         } else if (!active && registered.some((script) => script.id === "nullad-local")) {
@@ -71,7 +71,7 @@ if (typeof importScripts === "function") importScripts("policy.js");
       // Registration removal does not remove effects in existing documents.
       const warnings = [];
       for (const tab of tabs) {
-        const mode = hasAccess ? policy.pageMode(data.settings, data.pages, tab) : "off";
+        const mode = hasAccess && data.settings.heuristicsEnabled ? policy.pageMode(data.settings, data.pages, tab) : "off";
         try {
           if (mode !== "off") await api.scripting.executeScript({ target:{ tabId:tab.id, allFrames:true }, files:["detector.js", "content.js"], world:"ISOLATED" });
           await api.tabs.sendMessage(tab.id, { type:"CONFIGURE", mode });
@@ -106,7 +106,7 @@ if (typeof importScripts === "function") importScripts("policy.js");
       required();
       if (message.type === "GET_CONFIG") {
         const data = await read();
-        return { mode:await permitted() && sender.tab ? policy.pageMode(data.settings, data.pages, sender.tab) : "off" };
+        return { mode:await permitted() && data.settings.heuristicsEnabled && sender.tab ? policy.pageMode(data.settings, data.pages, sender.tab) : "off" };
       }
       if (message.type === "REPORT") {
         if (!sender.tab) throw new Error("Page report requires a tab sender");
@@ -131,17 +131,22 @@ if (typeof importScripts === "function") importScripts("policy.js");
         } else if (tab && Object.values(data.reports[tab.id] || {}).some((report) => report.hidden > 0)) {
           hidden = null; statsWarning = "Page access is unavailable; previous DOM effects cannot be confirmed. Reload this page.";
         }
-        return { ...data, hasAccess:access, mode:tab && access ? policy.pageMode(data.settings, data.pages, tab) : "off", hidden, statsWarning };
+        const dynamic = await api.declarativeNetRequest.getDynamicRules(), session = await api.declarativeNetRequest.getSessionRules();
+        return { ...data, hasAccess:access, mode:tab && access ? policy.pageMode(data.settings, data.pages, tab) : "off", hidden, statsWarning, installedNetworkRules:[...dynamic, ...session].filter((rule) => rule.action.type === "block").length, ruleData:policy.ruleData };
       }
       if (message.type === "ENABLE") {
         if (!["conservative", "balanced"].includes(message.mode)) throw new Error("Invalid mode");
         const tab = await api.tabs.get(message.tabId);
         const host = policy.hostname(tab.url);
         return change((next) => {
+          for (const key of ["rulesEnabled", "heuristicsEnabled"]) {
+            if (message[key] != null && typeof message[key] !== "boolean") throw new Error("Invalid protection layer");
+            if (message[key] != null) next.settings[key] = message[key];
+          }
+          if (!next.settings.rulesEnabled && !next.settings.heuristicsEnabled) throw new Error("Choose at least one protection layer");
           next.settings.preferredMode = message.mode;
-          next.settings.allowSites = next.settings.allowSites.filter((site) => site !== host);
           if (message.scope === "all") { next.settings.mode = message.mode; next.pages = {}; }
-          else if (message.scope === "page") { next.settings.mode = "off"; next.pages = { [tab.id]:{ host, mode:message.mode } }; }
+          else if (message.scope === "page") { next.settings.allowSites = next.settings.allowSites.filter((site) => site !== host); next.settings.mode = "off"; next.pages = { [tab.id]:{ host, mode:message.mode } }; }
           else throw new Error("Invalid scope");
         });
       }

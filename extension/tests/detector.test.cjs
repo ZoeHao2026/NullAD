@@ -43,3 +43,53 @@ test("persistent candidate cursor reaches an ad beyond the first thousand elemen
   assert.ok(steps>1250);assert.ok(found.includes(tail));
   assert.equal(found.filter(value=>value===tail).length,1);
 });
+test("explicit multilingual labels normalize harmless decoration but never match prose substrings", () => {
+  const f=fixture();
+  for(const value of ["付费推广", "廣告", "[Advertisement]", "Sponsored content:", "広告", "スポンサーコンテンツ", "광고", "유료 광고", "Publicité", "Contenu sponsorisé", "Anzeige", "Gesponsert", "Publicidad", "Contenido patrocinado", "Anúncio", "Conteúdo patrocinado", "Pubblicità", "Contenuto sponsorizzato", "Advertentie", "Treść sponsorowana", "Реклама", "إعلان ممول", "תוכן ממומן"]){
+    assert.equal(detector.matchesLabel(value),true,value);const ad=f.ad();ad.setAttribute("aria-label",value);assert.equal(detector.inspect(ad,"conservative").hide,true,value);
+  }
+  for(const value of ["How advertising works", "Advertisement settings", "Sponsored by our community volunteers", "Publicité et société", "広告についての記事", "publicidad educativa", "Admin", "Recommended", "PR", "Recommended for you", "adobe", "スポンサーリンクを管理", "Advertisement"+"x".repeat(81)]) assert.equal(detector.matchesLabel(value),false,value);
+});
+test("aria-labelledby uses the exact accessible label, bounded references and current shadow scope", () => {
+  const f=fixture();f.element("span",{id:"ad-label"},"广告");f.element("span",{id:"regular-label"},"Product reviews");
+  const ad=f.element("div",{class:"ad-placement", "aria-labelledby":"ad-label"});f.element("img",{},"",ad);
+  assert.equal(detector.inspect(ad,"conservative").hide,true);assert.ok(detector.candidates(f.document.documentElement).includes(ad));
+  ad.setAttribute("aria-labelledby","regular-label ad-label");assert.equal(detector.features(ad).label,false);
+  ad.setAttribute("aria-labelledby","missing ad-label");assert.equal(detector.features(ad).label,false);
+  ad.setAttribute("aria-labelledby","ad-label ad-label ad-label ad-label");assert.equal(detector.features(ad).label,false);
+  const host=f.element("div"),shadow=host.attachShadow();f.element("span",{id:"ad-label"},"Normal",shadow);
+  const shadowAd=f.element("div",{class:"ad-slot", "aria-labelledby":"ad-label"},"",shadow);f.element("img",{},"",shadowAd);
+  assert.equal(detector.features(shadowAd).label,false);
+  shadow.getElementById("ad-label").textContent="広告";assert.equal(detector.inspect(shadowAd,"conservative").hide,true);
+});
+test("a child badge or advertising attribute promotes only its bounded creative container", () => {
+  const f=fixture(),ad=f.element("div",{class:"ad-slot"}),badge=f.element("div",{"aria-description":"Contenu sponsorisé"},"",ad),media=f.element("a",{href:"https://brand.example/"},"",ad);f.element("img",{},"",media);
+  assert.equal(detector.inspect(ad,"conservative").hide,true);assert.equal(detector.inspect(badge,"balanced").hide,false);
+  const generic=f.element("div");f.element("span",{},"广告",generic);f.element("img",{},"",generic);
+  assert.equal(detector.inspect(generic,"balanced").hide,true);assert.equal(detector.inspect(generic,"conservative").hide,false);
+  const marked=f.element("div");f.element("div",{"data-ad-placement":"slot"},"",marked);f.element("iframe",{},"",marked);
+  assert.equal(detector.inspect(marked,"balanced").hide,true);assert.ok(detector.inspect(marked,"balanced").reasons.includes("contained-advertising-attribute"));
+});
+test("a sponsored child never promotes a mixed feed, article or unrelated sibling", () => {
+  const f=fixture(),feed=f.element("div"),ad=f.ad(feed);f.element("div",{},"Normal account settings",feed);
+  assert.equal(detector.inspect(ad,"conservative").hide,true);assert.equal(detector.inspect(feed,"balanced").hide,false);
+  const mixed=f.element("div"),badge=f.element("span",{},"Sponsored",mixed);f.element("a",{href:"#article"},"Ordinary product review",mixed);
+  assert.equal(detector.inspect(mixed,"balanced").hide,false);assert.equal(detector.inspect(badge,"balanced").hide,false);
+  const article=f.element("article",{class:"ad-slot"});f.element("span",{},"广告",article);f.element("img",{},"",article);assert.equal(detector.inspect(article,"balanced").hide,false);
+  const heading=f.element("h2",{class:"ad-title"},"Sponsored");assert.equal(detector.inspect(heading,"balanced").hide,false);
+});
+test("controls, navigation, login dialog, editor and player ancestry protect normal content", () => {
+  const f=fixture();
+  for(const [tag,attrs] of [["nav",{}],["form",{}],["div",{role:"dialog"}],["div",{role:"navigation"}],["div",{contenteditable:"plaintext-only"}]]){
+    const region=f.element(tag,attrs),ad=f.ad(region);assert.equal(detector.inspect(ad,"balanced").hide,false,tag+JSON.stringify(attrs));
+  }
+  for(const tag of ["nav","main","article","form","button","video","audio"]){const ad=f.ad();f.element(tag,{},"",ad);assert.equal(detector.inspect(ad,"balanced").hide,false,tag);}
+  const host=f.element("div",{role:"dialog"}),shadow=host.attachShadow(),ad=f.ad(shadow);assert.equal(detector.inspect(ad,"balanced").hide,false);
+});
+test("disabled advertising markers do not add evidence; label and geometry alone are insufficient", () => {
+  const f=fixture();
+  for(const name of ["data-ad", "data-sponsored", "data-advertisement", "data-ad-slot", "data-ad-unit", "data-ad-placement"]){
+    for(const disabled of ["false","OFF","disabled","none","0"]){const node=f.element("div",{[name]:disabled});f.element("img",{},"",node);assert.equal(detector.features(node).strongMarker,false,name+"="+disabled);assert.equal(detector.inspect(node,"balanced").hide,false);}
+  }
+  const label=f.element("div",{"aria-label":"Advertisement"});assert.equal(detector.inspect(label,"balanced").hide,false);
+});

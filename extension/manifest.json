@@ -1,13 +1,28 @@
 {
   "manifest_version": 3,
   "name": "NullAD Local",
-  "version": "0.1.0",
-  "description": "Local ad-resource heuristics and reversible page cleanup. No subscription, proxy changes or certificates.",
+  "version": "0.2.0",
+  "description": "本地广告与跟踪域名规则、免规则请求识别和可恢复页面清理；可独立或共同启用，不接管代理。",
   "minimum_chrome_version": "119",
-  "permissions": ["storage", "scripting", "activeTab", "declarativeNetRequestWithHostAccess"],
-  "optional_host_permissions": ["http://*/*", "https://*/*"],
-  "background": { "service_worker": "background.js" },
-  "action": { "default_title": "NullAD Local", "default_popup": "popup.html" },
+  "permissions": [
+    "storage",
+    "scripting",
+    "activeTab",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "NullAD Local",
+    "default_popup": "popup.html"
+  },
   "options_page": "options.html",
-  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'none'" }
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'none'"
+  }
 }

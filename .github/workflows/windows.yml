@@ -22,6 +22,8 @@ jobs:
       - run: cargo test --workspace --all-features --locked
       - run: node --test ui/tests/ui.test.cjs
       - run: node --test extension/tests/*.test.cjs
+      - run: python scripts/update-bundled-rules.py --check
+      - run: python tests/bundled-rules.py
       - run: cargo build --release --workspace --locked
       - run: python tests/e2e.py target/release/nullad-cli.exe
       - run: npx --yes @tauri-apps/cli@2.12.1 build --bundles nsis -- --locked

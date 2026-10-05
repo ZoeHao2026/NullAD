@@ -1,0 +1,8 @@
+# Exact-byte snapshots and generated data must reproduce on Windows too.
+rules/vendor/*.source -text
+rules/*.json text eol=lf
+rules/nullad-local-domains.txt text eol=lf
+lists/nullad-hosts.txt text eol=lf
+extension/domain-rules.js text eol=lf
+extension/THIRD_PARTY_NOTICES.md text eol=lf
+lists/THIRD_PARTY_NOTICES.md text eol=lf

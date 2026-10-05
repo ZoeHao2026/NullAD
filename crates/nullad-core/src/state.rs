@@ -1,6 +1,6 @@
 //! Application state and the lifecycle of running protection.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -12,7 +12,7 @@ use nullad_host::journal::{ChangeJournal, JournalKind, RestoreItem, RestoreRepor
 use nullad_host::{dns_config::DnsConfigurator, system_proxy::SystemProxy};
 use nullad_intercept::{Decision, DecisionSink, DetectionPolicy, EngineHandle, InterceptStats};
 
-use crate::settings::AppSettings;
+use crate::settings::{AppSettings, ListSource};
 use crate::updater::{ListLoader, LoadOutcome};
 
 /// How many recent decisions the live log keeps.
@@ -125,6 +125,7 @@ pub struct AppState {
     pub last_load: Mutex<Option<LoadOutcome>>,
     /// Summary of the lists currently applied.
     pub lists: Mutex<Vec<ListSummary>>,
+    list_statistics: Mutex<HashMap<(u32, ListSource), ListStatistics>>,
     /// Whether protection is currently active.
     running: AtomicBool,
     loader: ListLoader,
@@ -171,12 +172,19 @@ pub struct ListSummary {
     pub source: String,
     /// Whether it is applied.
     pub enabled: bool,
-    /// Rules it contributed.
+    /// Rules from the most recent load of this exact source, including disabled lists.
     pub rules: usize,
     /// Rules quarantined during parsing.
     pub failures: usize,
     /// Cosmetic rules recognised but not applied.
     pub cosmetic: usize,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct ListStatistics {
+    rules: usize,
+    failures: usize,
+    cosmetic: usize,
 }
 
 impl AppState {
@@ -202,6 +210,7 @@ impl AppState {
             intercept_stats: Arc::new(InterceptStats::new()),
             last_load: Mutex::new(None),
             lists: Mutex::new(Vec::new()),
+            list_statistics: Mutex::new(HashMap::new()),
             running: AtomicBool::new(false),
             loader: ListLoader::with_resource_dir(resource_dir),
             reload_lock: Mutex::new(()),
@@ -222,6 +231,43 @@ impl AppState {
             Ok(guard) => guard.clone(),
             Err(poisoned) => poisoned.into_inner().clone(),
         }
+    }
+
+    /// Returns every configured list, preserving loaded counts only for its exact identity.
+    /// Disabled entries remain visible so that the UI can enable them again.
+    #[must_use]
+    pub fn list_catalog(&self) -> Vec<ListSummary> {
+        let settings = self
+            .settings
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.list_catalog_for_settings(&settings)
+    }
+
+    fn list_catalog_for_settings(&self, settings: &AppSettings) -> Vec<ListSummary> {
+        let statistics = self
+            .list_statistics
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        settings
+            .lists
+            .iter()
+            .map(|entry| {
+                let counts = statistics
+                    .get(&(entry.id, entry.source.clone()))
+                    .copied()
+                    .unwrap_or_default();
+                ListSummary {
+                    id: entry.id,
+                    name: entry.name.clone(),
+                    source: entry.source.describe(),
+                    enabled: entry.enabled,
+                    rules: counts.rules,
+                    failures: counts.failures,
+                    cosmetic: counts.cosmetic,
+                }
+            })
+            .collect()
     }
 
     /// Replaces settings after persistence succeeds. Prefer patches for UI edits.
@@ -291,6 +337,32 @@ impl AppState {
         }
         if let Some(rule_set) = outcome.rule_set.clone() {
             self.engine.swap_shared(rule_set);
+        }
+        {
+            let mut statistics = self
+                .list_statistics
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            statistics.retain(|(id, source), _| {
+                settings
+                    .lists
+                    .iter()
+                    .any(|entry| entry.id == *id && entry.source == *source)
+            });
+            for summary in &outcome.summaries {
+                if let Some(entry) = settings.enabled_lists().find(|entry| {
+                    entry.id == summary.id && entry.source.describe() == summary.source
+                }) {
+                    statistics.insert(
+                        (entry.id, entry.source.clone()),
+                        ListStatistics {
+                            rules: summary.rules,
+                            failures: summary.failures,
+                            cosmetic: summary.cosmetic,
+                        },
+                    );
+                }
+            }
         }
         *self
             .lists
@@ -390,10 +462,7 @@ impl AppState {
         let settings = self.settings();
         let engine_stats = self.engine.stats_snapshot();
         let rule_stats = self.engine.rule_set().stats().clone();
-        let lists = match self.lists.lock() {
-            Ok(guard) => guard.clone(),
-            Err(poisoned) => poisoned.into_inner().clone(),
-        };
+        let lists = self.list_catalog_for_settings(&settings);
 
         let runtime = self
             .runtime_status
@@ -497,7 +566,7 @@ pub struct ProtectionStatus {
     pub rule_set: RuleSetStatsDto,
     /// Interceptor counters.
     pub intercept: InterceptStatus,
-    /// Applied filter lists.
+    /// Complete configured list catalog, including disabled entries.
     pub lists: Vec<ListSummary>,
     /// Actual bound proxy port.
     pub proxy_port: Option<u16>,
@@ -722,6 +791,7 @@ mod tests {
             intercept_stats: Arc::new(InterceptStats::new()),
             last_load: Mutex::new(None),
             lists: Mutex::new(Vec::new()),
+            list_statistics: Mutex::new(HashMap::new()),
             running: AtomicBool::new(false),
             loader: ListLoader::new(),
             reload_lock: Mutex::new(()),
@@ -1144,6 +1214,127 @@ mod tests {
             .modify_settings(|settings| settings.lists[0].enabled = false)
             .unwrap();
         state.reload_lists();
+        assert_eq!(state.engine.rule_count(), 0);
+    }
+
+    fn local_list_state(enabled: bool) -> (AppState, PathBuf) {
+        let path = crate::test_support::directory().join("catalog-list.txt");
+        std::fs::write(&path, "||ads.example.com^\n||tracker.example.com^\n").unwrap();
+        let settings = AppSettings {
+            lists: vec![crate::ListEntry {
+                id: 7,
+                name: "local catalog list".into(),
+                source: ListSource::Local {
+                    path: path.display().to_string(),
+                },
+                enabled,
+            }],
+            ..AppSettings::default()
+        };
+        (test_state(settings), path)
+    }
+
+    #[test]
+    fn disabled_list_remains_visible_and_can_be_reenabled_with_cached_rules() {
+        let (state, path) = local_list_state(true);
+        state.reload_lists();
+        assert_eq!(state.engine.rule_count(), 2);
+
+        state
+            .modify_settings(|settings| settings.lists[0].enabled = false)
+            .unwrap();
+        let disabled = state.reload_lists();
+        assert_eq!(disabled.total_rules, 0);
+        assert_eq!(state.engine.rule_count(), 0);
+        let catalog = state.list_catalog();
+        assert_eq!(catalog.len(), 1);
+        assert!(!catalog[0].enabled);
+        assert_eq!(catalog[0].rules, 2);
+        assert!(!state.status().lists[0].enabled);
+        assert_eq!(state.status_report().lists_loaded, 0);
+
+        // Re-enabling must still work if the source has become unreadable.
+        std::fs::remove_file(path).unwrap();
+        state
+            .modify_settings(|settings| settings.lists[0].enabled = true)
+            .unwrap();
+        let enabled = state.reload_lists();
+        assert!(enabled
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("last valid rules")));
+        assert_eq!(state.engine.rule_count(), 2);
+        assert!(state.list_catalog()[0].enabled);
+        assert_eq!(state.list_catalog()[0].rules, 2);
+        assert_eq!(state.status_report().lists_loaded, 1);
+    }
+
+    #[test]
+    fn never_loaded_disabled_list_stays_in_catalog_without_reading_source() {
+        let (state, path) = local_list_state(false);
+        std::fs::remove_file(path).unwrap();
+        let outcome = state.reload_lists();
+        assert!(outcome.warnings.is_empty());
+        assert_eq!(state.engine.rule_count(), 0);
+        let catalog = state.status().lists;
+        assert_eq!(catalog.len(), 1);
+        assert_eq!(catalog[0].id, 7);
+        assert_eq!(catalog[0].name, "local catalog list");
+        assert!(!catalog[0].enabled);
+        assert_eq!(catalog[0].rules, 0);
+    }
+
+    #[test]
+    fn reused_id_with_failed_new_source_does_not_reuse_old_catalog_counts() {
+        let (state, path) = local_list_state(true);
+        state.reload_lists();
+        assert_eq!(state.list_catalog()[0].rules, 2);
+        let missing = path.with_file_name("missing-catalog-list.txt");
+        state
+            .modify_settings(|settings| {
+                settings.lists[0].source = ListSource::Local {
+                    path: missing.display().to_string(),
+                };
+                settings.lists[0].name = "new missing source".into();
+            })
+            .unwrap();
+        assert_eq!(state.list_catalog()[0].rules, 0);
+        let outcome = state.reload_lists();
+        assert!(outcome
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("new missing source")));
+        assert_eq!(state.engine.rule_count(), 0);
+        let catalog = state.status().lists;
+        assert_eq!(catalog.len(), 1);
+        assert!(catalog[0].enabled);
+        assert_eq!(catalog[0].name, "new missing source");
+        assert_eq!(catalog[0].source, missing.display().to_string());
+        assert_eq!(catalog[0].rules, 0);
+        assert_eq!(catalog[0].failures, 0);
+    }
+
+    #[test]
+    fn same_display_source_with_different_source_kind_does_not_reuse_counts() {
+        let (state, path) = local_list_state(true);
+        state.reload_lists();
+        let previous_source = state.list_catalog()[0].source.clone();
+        state
+            .modify_settings(|settings| {
+                // The Local and Remote descriptions are both the raw string,
+                // but they are distinct loader identities.
+                settings.lists[0].source = ListSource::Remote {
+                    url: path.display().to_string(),
+                };
+                settings.lists[0].enabled = false;
+            })
+            .unwrap();
+        let catalog = state.list_catalog();
+        assert_eq!(catalog[0].source, previous_source);
+        assert!(!catalog[0].enabled);
+        assert_eq!(catalog[0].rules, 0);
+        state.reload_lists();
+        assert_eq!(state.list_catalog()[0].rules, 0);
         assert_eq!(state.engine.rule_count(), 0);
     }
 }

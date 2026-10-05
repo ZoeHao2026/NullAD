@@ -18,6 +18,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binaries', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--bundled', action='store_true', help='Include the current bundled production lists')
     args = parser.parse_args()
     names = ['heuristic-latency.exe', 'heuristic-alloc.exe']
     runs = []
@@ -26,7 +27,8 @@ def main():
             order = ['off', 'conservative', 'balanced']
             order = order[repeat % 3:] + order[:repeat % 3]
             for mode in order:
-                result = json.loads(subprocess.check_output([str((args.binaries / name).resolve()), mode], text=True))
+                command = [str((args.binaries / name).resolve()), mode] + (['--bundled'] if args.bundled else [])
+                result = json.loads(subprocess.check_output(command, text=True))
                 result['repeat'] = repeat + 1
                 runs.append(result)
     medians = []
@@ -39,7 +41,7 @@ def main():
                 entry[lane] = {key: statistics.median(x[key] for x in timing) for key in ['throughput_per_sec', 'mean_us', 'p50_us', 'p95_us', 'p99_us']}
                 entry[lane].update({key: statistics.median(x[key] for x in alloc) for key in ['allocations_per_request', 'bytes_per_request']})
             medians.append(entry)
-    data = {'date': str(date.today()), 'machine': platform.platform(), 'rust': subprocess.check_output(['rustc', '--version'], text=True).strip(), 'method': 'five independent warmed processes per mode, alternating order; two fixed rules, eight cohorts, 2000 warmup and 14000 measured requests per cohort; latency and stats_alloc builds separate; local decisions with actual bounded log, not network throughput', 'binary_sha256': {name: hashlib.sha256((args.binaries / name).read_bytes()).hexdigest() for name in names}, 'medians': medians, 'runs': runs}
+    data = {'date': str(date.today()), 'machine': platform.platform(), 'rust': subprocess.check_output(['rustc', '--version'], text=True).strip(), 'rules':runs[0]['rules'], 'bundled':args.bundled, 'method': 'five independent warmed processes per mode, alternating order; two fixed rules plus current bundled lists when requested, nine cohorts including SDK, 2000 warmup and 14000 measured requests per cohort; latency and stats_alloc builds separate; local decisions with actual bounded log, not network throughput', 'binary_sha256': {name: hashlib.sha256((args.binaries / name).read_bytes()).hexdigest() for name in names}, 'medians': medians, 'runs': runs}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(data, indent=2) + '\n', encoding='utf8')
     for row in medians:

@@ -12,6 +12,13 @@ class Node {
   appendChild(child) { child.remove(); child.parentNode = this; this.childNodes.push(child); return child; }
   remove() { if (this.parentNode) { this.parentNode.childNodes.splice(this.parentNode.childNodes.indexOf(this), 1); this.parentNode = null; } }
   getRootNode() { return this.parentNode ? this.parentNode.getRootNode() : this; }
+  getElementById(id) {
+    for (const child of this.childNodes) {
+      if (child.nodeType === 1 && child.id === id) return child;
+      const found = child.getElementById(id); if (found) return found;
+    }
+    return null;
+  }
 }
 class Element extends Node {
   constructor(document, tag) { super(document, 1); this.tagName = tag.toUpperCase(); this.attrs = new Map(); this.width = 300; this.height = 80; }
