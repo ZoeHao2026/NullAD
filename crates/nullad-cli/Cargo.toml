@@ -11,6 +11,21 @@ authors.workspace = true
 name = "nullad-cli"
 path = "src/main.rs"
 
+[[bin]]
+name = "nullad-perf"
+path = "src/performance.rs"
+required-features = ["performance"]
+
+[[bin]]
+name = "nullad-heuristic-perf"
+path = "src/heuristic_performance.rs"
+required-features = ["performance"]
+
+[features]
+performance = []
+# Allocation instrumentation is absent from normal application builds.
+profiling = ["performance", "dep:stats_alloc"]
+
 [dependencies]
 nullad-engine.workspace = true
 nullad-api.workspace = true
@@ -25,3 +40,4 @@ serde_json.workspace = true
 time.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
+stats_alloc = { version = "0.1.10", optional = true }

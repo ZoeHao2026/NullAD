@@ -3,21 +3,33 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use nullad_engine::{RuleSetBuilder, RuleSetStats};
+use nullad_engine::{ParseStats, Rule, RuleParser, RuleSetBuilder, RuleSetStats};
 /// Where lists are looked for when none are named explicitly.
 pub const DEFAULT_LIST_DIR: &str = "lists";
 
-/// One loaded list together with its raw text.
-///
-/// Per-list parse statistics are not cached here: `report` re-parses each list
-/// so that statistics can be attributed to the right list, and duplicating them
-/// would create two sources of truth.
+/// A list parsed once, sharing the same rules and statistics with build/report.
 #[derive(Debug)]
 pub struct LoadedList {
     /// Where the list came from, for display.
     pub source: String,
-    /// Raw list text.
-    pub text: String,
+    /// Parsed rules already tagged with the real list ID.
+    rules: Vec<Rule>,
+    /// The statistics produced by that same parse.
+    stats: ParseStats,
+    /// Source size before parsing.
+    bytes: usize,
+}
+
+impl LoadedList {
+    fn parse(source: String, text: &str, list_id: u32) -> Self {
+        let (rules, stats) = RuleParser::new().list_id(list_id).parse_list(text);
+        Self {
+            source,
+            rules,
+            stats,
+            bytes: text.len(),
+        }
+    }
 }
 
 /// A collection of filter lists.
@@ -26,13 +38,15 @@ pub struct ListSet {
     lists: Vec<LoadedList>,
     /// Paths that could not be read, with the reason.
     pub errors: Vec<String>,
+    load_elapsed_ms: f64,
 }
 
 impl ListSet {
-    /// Loads the named lists, or every file in [`DEFAULT_LIST_DIR`] when none
-    /// are named.
+    /// Loads explicit paths, or supported list files from cwd/lists, falling
+    /// back to lists beside the executable when the current directory has none.
     #[must_use]
     pub fn load(paths: &[PathBuf]) -> Self {
+        let started = Instant::now();
         let mut set = Self::default();
 
         let resolved: Vec<PathBuf> = if paths.is_empty() {
@@ -44,15 +58,18 @@ impl ListSet {
         for path in resolved {
             match std::fs::read_to_string(&path) {
                 Ok(text) => {
-                    set.lists.push(LoadedList {
-                        source: path.display().to_string(),
-                        text,
-                    });
+                    let list_id = u32::try_from(set.lists.len()).unwrap_or(u32::MAX);
+                    set.lists.push(LoadedList::parse(
+                        path.display().to_string(),
+                        &text,
+                        list_id,
+                    ));
                 }
                 Err(err) => set.errors.push(format!("{}: {err}", path.display())),
             }
         }
 
+        set.load_elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
         set
     }
 
@@ -60,22 +77,27 @@ impl ListSet {
     #[cfg(test)]
     #[must_use]
     pub fn from_texts(texts: Vec<(String, String)>) -> Self {
+        let started = Instant::now();
+        let lists = texts
+            .into_iter()
+            .enumerate()
+            .map(|(index, (source, text))| {
+                LoadedList::parse(source, &text, u32::try_from(index).unwrap_or(u32::MAX))
+            })
+            .collect();
         Self {
-            lists: texts
-                .into_iter()
-                .map(|(source, text)| LoadedList { source, text })
-                .collect(),
+            lists,
             errors: Vec::new(),
+            load_elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
         }
     }
 
-    /// Parses every list into a rule set builder.
+    /// Adds the already-parsed rules to a builder, retaining source attribution.
     #[must_use]
     pub fn build_builder(&self) -> RuleSetBuilder {
         let mut builder = RuleSetBuilder::new();
-        for (index, list) in self.lists.iter().enumerate() {
-            let list_id = u32::try_from(index).unwrap_or(u32::MAX);
-            builder.add_list(&list.text, list_id);
+        for list in &self.lists {
+            builder.add_rules(list.rules.iter().cloned());
         }
         builder
     }
@@ -94,12 +116,11 @@ impl ListSet {
         let mut total_bytes = 0usize;
 
         for list in &self.lists {
-            total_bytes += list.text.len();
-            let parser = nullad_engine::RuleParser::new();
-            let (rules, stats) = parser.parse_list(&list.text);
+            total_bytes += list.bytes;
+            let stats = &list.stats;
 
             if sample_rules.len() < 40 {
-                for rule in rules.iter().take(10) {
+                for rule in list.rules.iter().take(10) {
                     sample_rules.push(format!("{:<6} {}", rule.action, rule.raw));
                 }
             }
@@ -118,14 +139,30 @@ impl ListSet {
             rule_set,
             sample_rules,
             total_bytes,
-            elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+            elapsed_ms: self.load_elapsed_ms + started.elapsed().as_secs_f64() * 1000.0,
         }
     }
 }
 
 /// Discovers list files under the default directory.
 fn discover_default_lists() -> Vec<PathBuf> {
-    let dir = Path::new(DEFAULT_LIST_DIR);
+    let executable_dir = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf));
+    discover_lists_with_fallback(Path::new(DEFAULT_LIST_DIR), executable_dir.as_deref())
+}
+
+fn discover_lists_with_fallback(current: &Path, executable_dir: Option<&Path>) -> Vec<PathBuf> {
+    let current = discover_lists_in(current);
+    if !current.is_empty() {
+        return current;
+    }
+    executable_dir
+        .map(|dir| discover_lists_in(&dir.join(DEFAULT_LIST_DIR)))
+        .unwrap_or_default()
+}
+
+fn discover_lists_in(dir: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -135,9 +172,9 @@ fn discover_default_lists() -> Vec<PathBuf> {
         .map(|entry| entry.path())
         .filter(|path| {
             path.is_file()
-                && path
-                    .extension()
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("txt") || ext.eq_ignore_ascii_case("list"))
+                && path.extension().is_some_and(|ext| {
+                    ext.eq_ignore_ascii_case("txt") || ext.eq_ignore_ascii_case("list")
+                })
         })
         .collect();
     paths.sort();
@@ -270,5 +307,53 @@ mod tests {
         let set = ListSet::load(&[PathBuf::from("definitely/not/here.txt")]);
         assert!(set.lists.is_empty());
         assert_eq!(set.errors.len(), 1);
+    }
+
+    #[test]
+    fn cached_parse_retains_list_ids_source_lines_and_quarantined_stats() {
+        let first = "! first\n||one.example^\n/[/\n";
+        let second = "! second\n||two.example^\n";
+        let set = ListSet::from_texts(vec![
+            ("one".into(), first.into()),
+            ("two".into(), second.into()),
+        ]);
+        let rules = set.build_builder().build().unwrap();
+        let attribution: Vec<_> = rules
+            .rules()
+            .map(|rule| (rule.list_id, rule.source_line))
+            .collect();
+        assert_eq!(attribution, vec![(0, 2), (1, 2)]);
+        let report = set.report(rules.stats().clone());
+        assert_eq!(report.lists[0].accepted, 1);
+        assert_eq!(report.lists[0].failed, 1);
+        assert_eq!(report.lists[1].accepted, 1);
+        assert_eq!(report.total_bytes, first.len() + second.len());
+        assert!(report.sample_rules[0].contains("||one.example^"));
+        assert!(report.sample_rules[1].contains("||two.example^"));
+    }
+
+    #[test]
+    fn default_discovery_prefers_cwd_then_packaged_lists_and_ignores_documents() {
+        let root =
+            std::env::temp_dir().join(format!("nullad-cli-discovery-{}", std::process::id()));
+        let current = root.join("current/lists");
+        let packaged = root.join("package");
+        std::fs::create_dir_all(&current).unwrap();
+        std::fs::create_dir_all(packaged.join("lists")).unwrap();
+        std::fs::write(current.join("README.md"), "not a filter list").unwrap();
+        let bundled = packaged.join("lists/nullad-base.txt");
+        std::fs::write(&bundled, "||bundled.example^").unwrap();
+        assert_eq!(
+            discover_lists_with_fallback(&current, Some(&packaged)),
+            vec![bundled]
+        );
+        let local = current.join("local.list");
+        std::fs::write(&local, "||local.example^").unwrap();
+        assert_eq!(
+            discover_lists_with_fallback(&current, Some(&packaged)),
+            vec![local]
+        );
+        assert!(discover_lists_with_fallback(&root.join("missing"), None).is_empty());
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

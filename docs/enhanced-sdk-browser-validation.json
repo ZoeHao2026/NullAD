@@ -1,0 +1,4867 @@
+{
+  "browser": "isolated Edge via Playwright, headless",
+  "prefix": "enhanced-sdk-1791197676504",
+  "personalBrowserChanged": false,
+  "systemProxyChanged": false,
+  "productionPermissionsUX": "Unknown; grant was a test-only static manifest host_permissions field",
+  "manifestDifference": {
+    "added": {
+      "host_permissions": [
+        "http://*/*",
+        "https://*/*"
+      ]
+    },
+    "production": {
+      "manifest_version": 3,
+      "name": "NullAD Local",
+      "version": "0.2.0",
+      "description": "本地广告与跟踪域名规则、免规则请求识别和可恢复页面清理；可独立或共同启用，不接管代理。",
+      "minimum_chrome_version": "119",
+      "permissions": [
+        "storage",
+        "scripting",
+        "activeTab",
+        "declarativeNetRequestWithHostAccess"
+      ],
+      "optional_host_permissions": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "background": {
+        "service_worker": "background.js"
+      },
+      "action": {
+        "default_title": "NullAD Local",
+        "default_popup": "popup.html"
+      },
+      "options_page": "options.html",
+      "content_security_policy": {
+        "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'none'"
+      }
+    },
+    "test": {
+      "manifest_version": 3,
+      "name": "NullAD Local",
+      "version": "0.2.0",
+      "description": "本地广告与跟踪域名规则、免规则请求识别和可恢复页面清理；可独立或共同启用，不接管代理。",
+      "minimum_chrome_version": "119",
+      "permissions": [
+        "storage",
+        "scripting",
+        "activeTab",
+        "declarativeNetRequestWithHostAccess"
+      ],
+      "optional_host_permissions": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "background": {
+        "service_worker": "background.js"
+      },
+      "action": {
+        "default_title": "NullAD Local",
+        "default_popup": "popup.html"
+      },
+      "options_page": "options.html",
+      "content_security_policy": {
+        "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'none'"
+      },
+      "host_permissions": [
+        "http://*/*",
+        "https://*/*"
+      ]
+    }
+  },
+  "runtimeHashes": {
+    "background.js": {
+      "source": "01440064e7acd3a9ce6c49fb64afa440d72ee6be09f0aa7932abe612485d2b8f",
+      "qa": "01440064e7acd3a9ce6c49fb64afa440d72ee6be09f0aa7932abe612485d2b8f"
+    },
+    "content.js": {
+      "source": "ee9a60dd2d7d5297870aefd91da8a29478d8406e7010214fad8306fab072ac46",
+      "qa": "ee9a60dd2d7d5297870aefd91da8a29478d8406e7010214fad8306fab072ac46"
+    },
+    "detector.js": {
+      "source": "cf76e667f9ee72bc89dbbc2eb751ddb8cdda418173608b0f8f79a1660545bc5e",
+      "qa": "cf76e667f9ee72bc89dbbc2eb751ddb8cdda418173608b0f8f79a1660545bc5e"
+    },
+    "domain-rules.js": {
+      "source": "d2fa70bb97bf831936cfaeaaadd9d3e00c8ec1f592cf7015c82fa8c2c3dd2165",
+      "qa": "d2fa70bb97bf831936cfaeaaadd9d3e00c8ec1f592cf7015c82fa8c2c3dd2165"
+    },
+    "i18n.js": {
+      "source": "e49d8bdd7f1800fcc86f790fe30ba01c3f22e729bd536318aa68747706dd05f0",
+      "qa": "e49d8bdd7f1800fcc86f790fe30ba01c3f22e729bd536318aa68747706dd05f0"
+    },
+    "options.html": {
+      "source": "62fde308347ff7221dcd1fb0ea65c2a7a5660921abb99c5030247a4f4c0800eb",
+      "qa": "62fde308347ff7221dcd1fb0ea65c2a7a5660921abb99c5030247a4f4c0800eb"
+    },
+    "options.js": {
+      "source": "d0a09fac2146e83c282b16e3873180b12927d08d9372a822994db637a68b41fe",
+      "qa": "d0a09fac2146e83c282b16e3873180b12927d08d9372a822994db637a68b41fe"
+    },
+    "policy.js": {
+      "source": "8022d54e602cc5776cad12e60d08143110423a43aacb095b535355ff42f24e26",
+      "qa": "8022d54e602cc5776cad12e60d08143110423a43aacb095b535355ff42f24e26"
+    },
+    "popup.css": {
+      "source": "1226c42fd2b9af1147016251b04b5ca9766a8e9c5312594b40fb9e301fc352b9",
+      "qa": "1226c42fd2b9af1147016251b04b5ca9766a8e9c5312594b40fb9e301fc352b9"
+    },
+    "popup.html": {
+      "source": "45c54983b63321033e958c3ef8078b79098a8f34e39c0f6d941a3853ae13995f",
+      "qa": "45c54983b63321033e958c3ef8078b79098a8f34e39c0f6d941a3853ae13995f"
+    },
+    "popup.js": {
+      "source": "91fa5888dd85a673e4d095da58e7a6d8f5b7aab9ed5449bd78e656451ae568e7",
+      "qa": "91fa5888dd85a673e4d095da58e7a6d8f5b7aab9ed5449bd78e656451ae568e7"
+    },
+    "README.md": {
+      "source": "bd1a2cdf6b1df4da1ee3649ac7d49d310f86e1fd345e669160505718ac771d18",
+      "qa": "bd1a2cdf6b1df4da1ee3649ac7d49d310f86e1fd345e669160505718ac771d18"
+    },
+    "THIRD_PARTY_NOTICES.md": {
+      "source": "854393b58f774a6dc985fc2249f3cca05054079bcd1431b04892ecd782b3fb75",
+      "qa": "854393b58f774a6dc985fc2249f3cca05054079bcd1431b04892ecd782b3fb75"
+    }
+  },
+  "results": [
+    {
+      "route": "direct",
+      "checks": [
+        {
+          "name": "rules-only",
+          "rules": true,
+          "heuristics": false,
+          "displays": {
+            "ad": "block",
+            "mixedNormal": "block",
+            "login": "block"
+          },
+          "networkRules": 87
+        },
+        {
+          "name": "heuristics-only",
+          "rules": false,
+          "heuristics": true,
+          "displays": {
+            "ad": "none",
+            "mixedNormal": "block",
+            "login": "block"
+          },
+          "networkRules": 5
+        },
+        {
+          "name": "combined",
+          "rules": true,
+          "heuristics": true,
+          "displays": {
+            "ad": "none",
+            "mixedNormal": "block",
+            "login": "block"
+          },
+          "networkRules": 92
+        },
+        {
+          "name": "recycled multilingual label",
+          "pass": true
+        },
+        {
+          "name": "popup 380x600 zh-CN",
+          "widths": {
+            "innerWidth": 380,
+            "documentWidth": 380,
+            "bodyWidth": 380,
+            "scrollHeight": 998
+          },
+          "controls": [
+            {
+              "id": "rules-enabled",
+              "box": {
+                "x": 33,
+                "y": 292.75,
+                "width": 13,
+                "height": 13
+              }
+            },
+            {
+              "id": "heuristics-enabled",
+              "box": {
+                "x": 33,
+                "y": 324.4375,
+                "width": 13,
+                "height": 13
+              }
+            },
+            {
+              "id": "enable-page",
+              "box": {
+                "x": 33,
+                "y": 439.5,
+                "width": 153,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "enable-all",
+              "box": {
+                "x": 194,
+                "y": 439.5,
+                "width": 153,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "allow-site",
+              "box": {
+                "x": 33,
+                "y": 279.65625,
+                "width": 314,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "restore",
+              "box": {
+                "x": 33,
+                "y": 335.34375,
+                "width": 314,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "stop",
+              "box": {
+                "x": 33,
+                "y": 189.96875,
+                "width": 314,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "options",
+              "box": {
+                "x": 33,
+                "y": 424.21875,
+                "width": 98,
+                "height": 37.6875
+              }
+            }
+          ]
+        },
+        {
+          "name": "popup 380x600 en",
+          "widths": {
+            "innerWidth": 380,
+            "documentWidth": 380,
+            "bodyWidth": 380,
+            "scrollHeight": 1113
+          },
+          "controls": [
+            {
+              "id": "rules-enabled",
+              "box": {
+                "x": 33,
+                "y": 311.34375,
+                "width": 13,
+                "height": 13
+              }
+            },
+            {
+              "id": "heuristics-enabled",
+              "box": {
+                "x": 33,
+                "y": 343.03125,
+                "width": 13,
+                "height": 13
+              }
+            },
+            {
+              "id": "enable-page",
+              "box": {
+                "x": 33,
+                "y": 458.09375,
+                "width": 153,
+                "height": 61.375
+              }
+            },
+            {
+              "id": "enable-all",
+              "box": {
+                "x": 194,
+                "y": 458.09375,
+                "width": 153,
+                "height": 61.375
+              }
+            },
+            {
+              "id": "allow-site",
+              "box": {
+                "x": 33,
+                "y": 280.53125,
+                "width": 314,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "restore",
+              "box": {
+                "x": 33,
+                "y": 336.21875,
+                "width": 314,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "stop",
+              "box": {
+                "x": 33,
+                "y": 190.84375,
+                "width": 314,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "options",
+              "box": {
+                "x": 33,
+                "y": 443.6875,
+                "width": 144.671875,
+                "height": 37.6875
+              }
+            }
+          ]
+        },
+        {
+          "name": "stop removes DNR and registration, restores page",
+          "pass": true
+        }
+      ],
+      "requests": [
+        {
+          "name": "default off",
+          "phase": "direct-off",
+          "requests": [
+            {
+              "id": "third-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "short-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "docs-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "login-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "normal-domain-only",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            }
+          ]
+        },
+        {
+          "name": "rules-only",
+          "phase": "direct-rules-only",
+          "requests": [
+            {
+              "id": "third-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "short-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "docs-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "login-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "normal-domain-only",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            }
+          ]
+        },
+        {
+          "name": "heuristics-only",
+          "phase": "direct-heuristics-only",
+          "requests": [
+            {
+              "id": "third-prebid",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            },
+            {
+              "id": "third-gpt",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            },
+            {
+              "id": "third-ima",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            },
+            {
+              "id": "first-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "short-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "docs-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "login-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "normal-domain-only",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            }
+          ]
+        },
+        {
+          "name": "combined",
+          "phase": "direct-combined",
+          "requests": [
+            {
+              "id": "third-prebid",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            },
+            {
+              "id": "third-gpt",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            },
+            {
+              "id": "third-ima",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            },
+            {
+              "id": "first-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "short-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "docs-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "login-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "normal-domain-only",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            }
+          ]
+        },
+        {
+          "name": "allowed persists through global re-enable",
+          "phase": "direct-allowed",
+          "requests": [
+            {
+              "id": "third-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "short-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "docs-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "login-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "normal-domain-only",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            }
+          ]
+        },
+        {
+          "name": "stopped",
+          "phase": "direct-stopped",
+          "requests": [
+            {
+              "id": "third-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "short-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "docs-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "login-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "normal-domain-only",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            }
+          ]
+        }
+      ],
+      "popupErrors": [],
+      "assertions": 246,
+      "requestFailures": [
+        {
+          "url": "http://doubleclick.com:56300/normal-domain-only.js?case=direct-rules-only&id=normal-domain-only&route=direct",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://localhost:56300/sdk/prebid.js?case=direct-heuristics-only&id=third-prebid&route=direct",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://localhost:56300/tag/js/gpt.js?case=direct-heuristics-only&id=third-gpt&route=direct",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://localhost:56300/js/sdkloader/ima3.js?case=direct-heuristics-only&id=third-ima&route=direct",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://localhost:56300/sdk/prebid.js?case=direct-combined&id=third-prebid&route=direct",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://localhost:56300/tag/js/gpt.js?case=direct-combined&id=third-gpt&route=direct",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://localhost:56300/js/sdkloader/ima3.js?case=direct-combined&id=third-ima&route=direct",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://doubleclick.com:56300/normal-domain-only.js?case=direct-combined&id=normal-domain-only&route=direct",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        }
+      ],
+      "status": "Pass"
+    },
+    {
+      "route": "http",
+      "checks": [
+        {
+          "name": "rules-only",
+          "rules": true,
+          "heuristics": false,
+          "displays": {
+            "ad": "block",
+            "mixedNormal": "block",
+            "login": "block"
+          },
+          "networkRules": 87
+        },
+        {
+          "name": "heuristics-only",
+          "rules": false,
+          "heuristics": true,
+          "displays": {
+            "ad": "none",
+            "mixedNormal": "block",
+            "login": "block"
+          },
+          "networkRules": 5
+        },
+        {
+          "name": "combined",
+          "rules": true,
+          "heuristics": true,
+          "displays": {
+            "ad": "none",
+            "mixedNormal": "block",
+            "login": "block"
+          },
+          "networkRules": 92
+        },
+        {
+          "name": "recycled multilingual label",
+          "pass": true
+        },
+        {
+          "name": "popup 380x600 zh-CN",
+          "widths": {
+            "innerWidth": 380,
+            "documentWidth": 380,
+            "bodyWidth": 380,
+            "scrollHeight": 998
+          },
+          "controls": [
+            {
+              "id": "rules-enabled",
+              "box": {
+                "x": 33,
+                "y": 292.75,
+                "width": 13,
+                "height": 13
+              }
+            },
+            {
+              "id": "heuristics-enabled",
+              "box": {
+                "x": 33,
+                "y": 324.4375,
+                "width": 13,
+                "height": 13
+              }
+            },
+            {
+              "id": "enable-page",
+              "box": {
+                "x": 33,
+                "y": 439.5,
+                "width": 153,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "enable-all",
+              "box": {
+                "x": 194,
+                "y": 439.5,
+                "width": 153,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "allow-site",
+              "box": {
+                "x": 33,
+                "y": 279.65625,
+                "width": 314,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "restore",
+              "box": {
+                "x": 33,
+                "y": 335.34375,
+                "width": 314,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "stop",
+              "box": {
+                "x": 33,
+                "y": 189.96875,
+                "width": 314,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "options",
+              "box": {
+                "x": 33,
+                "y": 424.21875,
+                "width": 98,
+                "height": 37.6875
+              }
+            }
+          ]
+        },
+        {
+          "name": "popup 380x600 en",
+          "widths": {
+            "innerWidth": 380,
+            "documentWidth": 380,
+            "bodyWidth": 380,
+            "scrollHeight": 1113
+          },
+          "controls": [
+            {
+              "id": "rules-enabled",
+              "box": {
+                "x": 33,
+                "y": 311.34375,
+                "width": 13,
+                "height": 13
+              }
+            },
+            {
+              "id": "heuristics-enabled",
+              "box": {
+                "x": 33,
+                "y": 343.03125,
+                "width": 13,
+                "height": 13
+              }
+            },
+            {
+              "id": "enable-page",
+              "box": {
+                "x": 33,
+                "y": 458.09375,
+                "width": 153,
+                "height": 61.375
+              }
+            },
+            {
+              "id": "enable-all",
+              "box": {
+                "x": 194,
+                "y": 458.09375,
+                "width": 153,
+                "height": 61.375
+              }
+            },
+            {
+              "id": "allow-site",
+              "box": {
+                "x": 33,
+                "y": 280.53125,
+                "width": 314,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "restore",
+              "box": {
+                "x": 33,
+                "y": 336.21875,
+                "width": 314,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "stop",
+              "box": {
+                "x": 33,
+                "y": 190.84375,
+                "width": 314,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "options",
+              "box": {
+                "x": 33,
+                "y": 443.6875,
+                "width": 144.671875,
+                "height": 37.6875
+              }
+            }
+          ]
+        },
+        {
+          "name": "stop removes DNR and registration, restores page",
+          "pass": true
+        }
+      ],
+      "requests": [
+        {
+          "name": "default off",
+          "phase": "http-off",
+          "requests": [
+            {
+              "id": "third-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "short-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "docs-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "login-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "normal-domain-only",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            }
+          ]
+        },
+        {
+          "name": "rules-only",
+          "phase": "http-rules-only",
+          "requests": [
+            {
+              "id": "third-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "short-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "docs-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "login-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "normal-domain-only",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            }
+          ]
+        },
+        {
+          "name": "heuristics-only",
+          "phase": "http-heuristics-only",
+          "requests": [
+            {
+              "id": "third-prebid",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            },
+            {
+              "id": "third-gpt",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            },
+            {
+              "id": "third-ima",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            },
+            {
+              "id": "first-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "short-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "docs-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "login-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "normal-domain-only",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            }
+          ]
+        },
+        {
+          "name": "combined",
+          "phase": "http-combined",
+          "requests": [
+            {
+              "id": "third-prebid",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            },
+            {
+              "id": "third-gpt",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            },
+            {
+              "id": "third-ima",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            },
+            {
+              "id": "first-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "short-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "docs-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "login-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "normal-domain-only",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            }
+          ]
+        },
+        {
+          "name": "allowed persists through global re-enable",
+          "phase": "http-allowed",
+          "requests": [
+            {
+              "id": "third-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "short-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "docs-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "login-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "normal-domain-only",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            }
+          ]
+        },
+        {
+          "name": "stopped",
+          "phase": "http-stopped",
+          "requests": [
+            {
+              "id": "third-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "short-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "docs-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "login-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "normal-domain-only",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            }
+          ]
+        }
+      ],
+      "popupErrors": [],
+      "assertions": 246,
+      "requestFailures": [
+        {
+          "url": "http://doubleclick.com:56300/normal-domain-only.js?case=http-rules-only&id=normal-domain-only&route=http",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://qa-sdk.invalid:56300/sdk/prebid.js?case=http-heuristics-only&id=third-prebid&route=http",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://qa-sdk.invalid:56300/tag/js/gpt.js?case=http-heuristics-only&id=third-gpt&route=http",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://qa-sdk.invalid:56300/js/sdkloader/ima3.js?case=http-heuristics-only&id=third-ima&route=http",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://qa-sdk.invalid:56300/sdk/prebid.js?case=http-combined&id=third-prebid&route=http",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://qa-sdk.invalid:56300/tag/js/gpt.js?case=http-combined&id=third-gpt&route=http",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://qa-sdk.invalid:56300/js/sdkloader/ima3.js?case=http-combined&id=third-ima&route=http",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://doubleclick.com:56300/normal-domain-only.js?case=http-combined&id=normal-domain-only&route=http",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        }
+      ],
+      "status": "Pass"
+    },
+    {
+      "route": "socks5",
+      "checks": [
+        {
+          "name": "rules-only",
+          "rules": true,
+          "heuristics": false,
+          "displays": {
+            "ad": "block",
+            "mixedNormal": "block",
+            "login": "block"
+          },
+          "networkRules": 87
+        },
+        {
+          "name": "heuristics-only",
+          "rules": false,
+          "heuristics": true,
+          "displays": {
+            "ad": "none",
+            "mixedNormal": "block",
+            "login": "block"
+          },
+          "networkRules": 5
+        },
+        {
+          "name": "combined",
+          "rules": true,
+          "heuristics": true,
+          "displays": {
+            "ad": "none",
+            "mixedNormal": "block",
+            "login": "block"
+          },
+          "networkRules": 92
+        },
+        {
+          "name": "recycled multilingual label",
+          "pass": true
+        },
+        {
+          "name": "popup 380x600 zh-CN",
+          "widths": {
+            "innerWidth": 380,
+            "documentWidth": 380,
+            "bodyWidth": 380,
+            "scrollHeight": 998
+          },
+          "controls": [
+            {
+              "id": "rules-enabled",
+              "box": {
+                "x": 33,
+                "y": 292.75,
+                "width": 13,
+                "height": 13
+              }
+            },
+            {
+              "id": "heuristics-enabled",
+              "box": {
+                "x": 33,
+                "y": 324.4375,
+                "width": 13,
+                "height": 13
+              }
+            },
+            {
+              "id": "enable-page",
+              "box": {
+                "x": 33,
+                "y": 439.5,
+                "width": 153,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "enable-all",
+              "box": {
+                "x": 194,
+                "y": 439.5,
+                "width": 153,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "allow-site",
+              "box": {
+                "x": 33,
+                "y": 279.65625,
+                "width": 314,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "restore",
+              "box": {
+                "x": 33,
+                "y": 335.34375,
+                "width": 314,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "stop",
+              "box": {
+                "x": 33,
+                "y": 189.96875,
+                "width": 314,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "options",
+              "box": {
+                "x": 33,
+                "y": 424.21875,
+                "width": 98,
+                "height": 37.6875
+              }
+            }
+          ]
+        },
+        {
+          "name": "popup 380x600 en",
+          "widths": {
+            "innerWidth": 380,
+            "documentWidth": 380,
+            "bodyWidth": 380,
+            "scrollHeight": 1113
+          },
+          "controls": [
+            {
+              "id": "rules-enabled",
+              "box": {
+                "x": 33,
+                "y": 311.34375,
+                "width": 13,
+                "height": 13
+              }
+            },
+            {
+              "id": "heuristics-enabled",
+              "box": {
+                "x": 33,
+                "y": 343.03125,
+                "width": 13,
+                "height": 13
+              }
+            },
+            {
+              "id": "enable-page",
+              "box": {
+                "x": 33,
+                "y": 458.09375,
+                "width": 153,
+                "height": 61.375
+              }
+            },
+            {
+              "id": "enable-all",
+              "box": {
+                "x": 194,
+                "y": 458.09375,
+                "width": 153,
+                "height": 61.375
+              }
+            },
+            {
+              "id": "allow-site",
+              "box": {
+                "x": 33,
+                "y": 280.53125,
+                "width": 314,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "restore",
+              "box": {
+                "x": 33,
+                "y": 336.21875,
+                "width": 314,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "stop",
+              "box": {
+                "x": 33,
+                "y": 190.84375,
+                "width": 314,
+                "height": 39.6875
+              }
+            },
+            {
+              "id": "options",
+              "box": {
+                "x": 33,
+                "y": 443.6875,
+                "width": 144.671875,
+                "height": 37.6875
+              }
+            }
+          ]
+        },
+        {
+          "name": "stop removes DNR and registration, restores page",
+          "pass": true
+        }
+      ],
+      "requests": [
+        {
+          "name": "default off",
+          "phase": "socks5-off",
+          "requests": [
+            {
+              "id": "third-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "short-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "docs-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "login-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "normal-domain-only",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            }
+          ]
+        },
+        {
+          "name": "rules-only",
+          "phase": "socks5-rules-only",
+          "requests": [
+            {
+              "id": "third-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "short-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "docs-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "login-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "normal-domain-only",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            }
+          ]
+        },
+        {
+          "name": "heuristics-only",
+          "phase": "socks5-heuristics-only",
+          "requests": [
+            {
+              "id": "third-prebid",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            },
+            {
+              "id": "third-gpt",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            },
+            {
+              "id": "third-ima",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            },
+            {
+              "id": "first-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "short-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "docs-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "login-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "normal-domain-only",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            }
+          ]
+        },
+        {
+          "name": "combined",
+          "phase": "socks5-combined",
+          "requests": [
+            {
+              "id": "third-prebid",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            },
+            {
+              "id": "third-gpt",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            },
+            {
+              "id": "third-ima",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            },
+            {
+              "id": "first-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "short-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "docs-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "login-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "normal-domain-only",
+              "blocked": true,
+              "originArrived": false,
+              "httpStatus": null,
+              "error": "net::ERR_BLOCKED_BY_CLIENT"
+            }
+          ]
+        },
+        {
+          "name": "allowed persists through global re-enable",
+          "phase": "socks5-allowed",
+          "requests": [
+            {
+              "id": "third-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "short-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "docs-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "login-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "normal-domain-only",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            }
+          ]
+        },
+        {
+          "name": "stopped",
+          "phase": "socks5-stopped",
+          "requests": [
+            {
+              "id": "third-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "third-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "first-ima",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "short-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "docs-prebid",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "login-gpt",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            },
+            {
+              "id": "normal-domain-only",
+              "blocked": false,
+              "originArrived": true,
+              "httpStatus": 200,
+              "error": null
+            }
+          ]
+        }
+      ],
+      "popupErrors": [],
+      "assertions": 246,
+      "requestFailures": [
+        {
+          "url": "http://doubleclick.com:56300/normal-domain-only.js?case=socks5-rules-only&id=normal-domain-only&route=socks5",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://qa-sdk.invalid:56300/sdk/prebid.js?case=socks5-heuristics-only&id=third-prebid&route=socks5",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://qa-sdk.invalid:56300/tag/js/gpt.js?case=socks5-heuristics-only&id=third-gpt&route=socks5",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://qa-sdk.invalid:56300/js/sdkloader/ima3.js?case=socks5-heuristics-only&id=third-ima&route=socks5",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://qa-sdk.invalid:56300/sdk/prebid.js?case=socks5-combined&id=third-prebid&route=socks5",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://qa-sdk.invalid:56300/tag/js/gpt.js?case=socks5-combined&id=third-gpt&route=socks5",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://qa-sdk.invalid:56300/js/sdkloader/ima3.js?case=socks5-combined&id=third-ima&route=socks5",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        },
+        {
+          "url": "http://doubleclick.com:56300/normal-domain-only.js?case=socks5-combined&id=normal-domain-only&route=socks5",
+          "error": "net::ERR_BLOCKED_BY_CLIENT"
+        }
+      ],
+      "status": "Pass"
+    }
+  ],
+  "errors": [],
+  "httpProxyObserved": [
+    "http://edge.microsoft.com/browsernetworktime/time/1/current?cup2key=2:qucpKFXvDchoGCsj735g-YKXj4XFr2Iiw78Fr_xRAko&cup2hreq=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "http://qa-publisher.invalid:56300/fixture?route=http&phase=http-off",
+    "http://qa-publisher.invalid:56300/normal.png",
+    "http://qa-sdk.invalid:56300/sdk/prebid.js?case=http-off&id=third-prebid&route=http",
+    "http://qa-sdk.invalid:56300/tag/js/gpt.js?case=http-off&id=third-gpt&route=http",
+    "http://qa-sdk.invalid:56300/js/sdkloader/ima3.js?case=http-off&id=third-ima&route=http",
+    "http://qa-publisher.invalid:56300/sdk/prebid.js?case=http-off&id=first-prebid&route=http",
+    "http://qa-publisher.invalid:56300/tag/js/gpt.js?case=http-off&id=first-gpt&route=http",
+    "http://qa-publisher.invalid:56300/js/sdkloader/ima3.js?case=http-off&id=first-ima&route=http",
+    "http://qa-sdk.invalid:56300/gpt.js?case=http-off&id=short-gpt&route=http",
+    "http://qa-sdk.invalid:56300/docs/prebid.js?case=http-off&id=docs-prebid&route=http",
+    "http://qa-sdk.invalid:56300/login/tag/js/gpt.js?case=http-off&id=login-gpt&route=http",
+    "http://doubleclick.com:56300/normal-domain-only.js?case=http-off&id=normal-domain-only&route=http",
+    "http://qa-publisher.invalid:56300/favicon.ico",
+    "http://qa-publisher.invalid:56300/fixture?route=http&phase=http-rules-only",
+    "http://qa-publisher.invalid:56300/normal.png",
+    "http://qa-sdk.invalid:56300/sdk/prebid.js?case=http-rules-only&id=third-prebid&route=http",
+    "http://qa-sdk.invalid:56300/tag/js/gpt.js?case=http-rules-only&id=third-gpt&route=http",
+    "http://qa-sdk.invalid:56300/js/sdkloader/ima3.js?case=http-rules-only&id=third-ima&route=http",
+    "http://qa-publisher.invalid:56300/sdk/prebid.js?case=http-rules-only&id=first-prebid&route=http",
+    "http://qa-publisher.invalid:56300/tag/js/gpt.js?case=http-rules-only&id=first-gpt&route=http",
+    "http://qa-publisher.invalid:56300/js/sdkloader/ima3.js?case=http-rules-only&id=first-ima&route=http",
+    "http://qa-sdk.invalid:56300/gpt.js?case=http-rules-only&id=short-gpt&route=http",
+    "http://qa-sdk.invalid:56300/docs/prebid.js?case=http-rules-only&id=docs-prebid&route=http",
+    "http://qa-sdk.invalid:56300/login/tag/js/gpt.js?case=http-rules-only&id=login-gpt&route=http",
+    "http://qa-publisher.invalid:56300/favicon.ico",
+    "http://qa-publisher.invalid:56300/fixture?route=http&phase=http-heuristics-only",
+    "http://qa-publisher.invalid:56300/normal.png",
+    "http://qa-publisher.invalid:56300/sdk/prebid.js?case=http-heuristics-only&id=first-prebid&route=http",
+    "http://qa-publisher.invalid:56300/tag/js/gpt.js?case=http-heuristics-only&id=first-gpt&route=http",
+    "http://qa-publisher.invalid:56300/js/sdkloader/ima3.js?case=http-heuristics-only&id=first-ima&route=http",
+    "http://qa-sdk.invalid:56300/gpt.js?case=http-heuristics-only&id=short-gpt&route=http",
+    "http://qa-sdk.invalid:56300/docs/prebid.js?case=http-heuristics-only&id=docs-prebid&route=http",
+    "http://qa-sdk.invalid:56300/login/tag/js/gpt.js?case=http-heuristics-only&id=login-gpt&route=http",
+    "http://doubleclick.com:56300/normal-domain-only.js?case=http-heuristics-only&id=normal-domain-only&route=http",
+    "http://qa-publisher.invalid:56300/favicon.ico",
+    "http://qa-publisher.invalid:56300/fixture?route=http&phase=http-combined",
+    "http://qa-publisher.invalid:56300/normal.png",
+    "http://qa-publisher.invalid:56300/sdk/prebid.js?case=http-combined&id=first-prebid&route=http",
+    "http://qa-publisher.invalid:56300/tag/js/gpt.js?case=http-combined&id=first-gpt&route=http",
+    "http://qa-publisher.invalid:56300/js/sdkloader/ima3.js?case=http-combined&id=first-ima&route=http",
+    "http://qa-sdk.invalid:56300/gpt.js?case=http-combined&id=short-gpt&route=http",
+    "http://qa-sdk.invalid:56300/docs/prebid.js?case=http-combined&id=docs-prebid&route=http",
+    "http://qa-sdk.invalid:56300/login/tag/js/gpt.js?case=http-combined&id=login-gpt&route=http",
+    "http://qa-publisher.invalid:56300/favicon.ico",
+    "http://qa-publisher.invalid:56300/fixture?route=http&phase=http-allowed",
+    "http://qa-publisher.invalid:56300/normal.png",
+    "http://qa-sdk.invalid:56300/sdk/prebid.js?case=http-allowed&id=third-prebid&route=http",
+    "http://qa-sdk.invalid:56300/tag/js/gpt.js?case=http-allowed&id=third-gpt&route=http",
+    "http://qa-sdk.invalid:56300/js/sdkloader/ima3.js?case=http-allowed&id=third-ima&route=http",
+    "http://qa-publisher.invalid:56300/sdk/prebid.js?case=http-allowed&id=first-prebid&route=http",
+    "http://qa-publisher.invalid:56300/tag/js/gpt.js?case=http-allowed&id=first-gpt&route=http",
+    "http://qa-publisher.invalid:56300/js/sdkloader/ima3.js?case=http-allowed&id=first-ima&route=http",
+    "http://qa-sdk.invalid:56300/gpt.js?case=http-allowed&id=short-gpt&route=http",
+    "http://qa-sdk.invalid:56300/docs/prebid.js?case=http-allowed&id=docs-prebid&route=http",
+    "http://qa-sdk.invalid:56300/login/tag/js/gpt.js?case=http-allowed&id=login-gpt&route=http",
+    "http://doubleclick.com:56300/normal-domain-only.js?case=http-allowed&id=normal-domain-only&route=http",
+    "http://qa-publisher.invalid:56300/favicon.ico",
+    "http://qa-publisher.invalid:56300/fixture?route=http&phase=http-stopped",
+    "http://qa-publisher.invalid:56300/normal.png",
+    "http://qa-sdk.invalid:56300/sdk/prebid.js?case=http-stopped&id=third-prebid&route=http",
+    "http://qa-sdk.invalid:56300/tag/js/gpt.js?case=http-stopped&id=third-gpt&route=http",
+    "http://qa-sdk.invalid:56300/js/sdkloader/ima3.js?case=http-stopped&id=third-ima&route=http",
+    "http://qa-publisher.invalid:56300/sdk/prebid.js?case=http-stopped&id=first-prebid&route=http",
+    "http://qa-publisher.invalid:56300/tag/js/gpt.js?case=http-stopped&id=first-gpt&route=http",
+    "http://qa-publisher.invalid:56300/js/sdkloader/ima3.js?case=http-stopped&id=first-ima&route=http",
+    "http://qa-sdk.invalid:56300/gpt.js?case=http-stopped&id=short-gpt&route=http",
+    "http://qa-sdk.invalid:56300/docs/prebid.js?case=http-stopped&id=docs-prebid&route=http",
+    "http://qa-sdk.invalid:56300/login/tag/js/gpt.js?case=http-stopped&id=login-gpt&route=http",
+    "http://doubleclick.com:56300/normal-domain-only.js?case=http-stopped&id=normal-domain-only&route=http",
+    "http://qa-publisher.invalid:56300/favicon.ico"
+  ],
+  "socksTargets": [
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 80
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "doubleclick.com",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "mss.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "mss.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "prod.rewardsplatform.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "prod.rewardsplatform.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "mss.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "mss.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "doubleclick.com",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "doubleclick.com",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge-consumer-static.azureedge.net",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge-consumer-static.azureedge.net",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-sdk.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "doubleclick.com",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "qa-publisher.invalid",
+      "port": 56300
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    }
+  ],
+  "originArrivals": [
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/fixture?route=direct&phase=direct-off",
+      "case": null,
+      "id": null,
+      "route": "direct",
+      "at": 1791197677176
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/normal.png",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197677205
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/sdk/prebid.js?case=direct-off&id=third-prebid&route=direct",
+      "case": "direct-off",
+      "id": "third-prebid",
+      "route": "direct",
+      "at": 1791197677210
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/tag/js/gpt.js?case=direct-off&id=third-gpt&route=direct",
+      "case": "direct-off",
+      "id": "third-gpt",
+      "route": "direct",
+      "at": 1791197677210
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/js/sdkloader/ima3.js?case=direct-off&id=third-ima&route=direct",
+      "case": "direct-off",
+      "id": "third-ima",
+      "route": "direct",
+      "at": 1791197677211
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/sdk/prebid.js?case=direct-off&id=first-prebid&route=direct",
+      "case": "direct-off",
+      "id": "first-prebid",
+      "route": "direct",
+      "at": 1791197677217
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/tag/js/gpt.js?case=direct-off&id=first-gpt&route=direct",
+      "case": "direct-off",
+      "id": "first-gpt",
+      "route": "direct",
+      "at": 1791197677218
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/js/sdkloader/ima3.js?case=direct-off&id=first-ima&route=direct",
+      "case": "direct-off",
+      "id": "first-ima",
+      "route": "direct",
+      "at": 1791197677218
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/gpt.js?case=direct-off&id=short-gpt&route=direct",
+      "case": "direct-off",
+      "id": "short-gpt",
+      "route": "direct",
+      "at": 1791197677218
+    },
+    {
+      "host": "doubleclick.com:56300",
+      "url": "/normal-domain-only.js?case=direct-off&id=normal-domain-only&route=direct",
+      "case": "direct-off",
+      "id": "normal-domain-only",
+      "route": "direct",
+      "at": 1791197677224
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/docs/prebid.js?case=direct-off&id=docs-prebid&route=direct",
+      "case": "direct-off",
+      "id": "docs-prebid",
+      "route": "direct",
+      "at": 1791197677224
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/login/tag/js/gpt.js?case=direct-off&id=login-gpt&route=direct",
+      "case": "direct-off",
+      "id": "login-gpt",
+      "route": "direct",
+      "at": 1791197677224
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/favicon.ico",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197677236
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/fixture?route=direct&phase=direct-rules-only",
+      "case": null,
+      "id": null,
+      "route": "direct",
+      "at": 1791197682086
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/normal.png",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197682111
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/sdk/prebid.js?case=direct-rules-only&id=third-prebid&route=direct",
+      "case": "direct-rules-only",
+      "id": "third-prebid",
+      "route": "direct",
+      "at": 1791197682118
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/tag/js/gpt.js?case=direct-rules-only&id=third-gpt&route=direct",
+      "case": "direct-rules-only",
+      "id": "third-gpt",
+      "route": "direct",
+      "at": 1791197682118
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/sdk/prebid.js?case=direct-rules-only&id=first-prebid&route=direct",
+      "case": "direct-rules-only",
+      "id": "first-prebid",
+      "route": "direct",
+      "at": 1791197682119
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/tag/js/gpt.js?case=direct-rules-only&id=first-gpt&route=direct",
+      "case": "direct-rules-only",
+      "id": "first-gpt",
+      "route": "direct",
+      "at": 1791197682120
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/js/sdkloader/ima3.js?case=direct-rules-only&id=third-ima&route=direct",
+      "case": "direct-rules-only",
+      "id": "third-ima",
+      "route": "direct",
+      "at": 1791197682120
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/js/sdkloader/ima3.js?case=direct-rules-only&id=first-ima&route=direct",
+      "case": "direct-rules-only",
+      "id": "first-ima",
+      "route": "direct",
+      "at": 1791197682121
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/gpt.js?case=direct-rules-only&id=short-gpt&route=direct",
+      "case": "direct-rules-only",
+      "id": "short-gpt",
+      "route": "direct",
+      "at": 1791197682125
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/docs/prebid.js?case=direct-rules-only&id=docs-prebid&route=direct",
+      "case": "direct-rules-only",
+      "id": "docs-prebid",
+      "route": "direct",
+      "at": 1791197682126
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/login/tag/js/gpt.js?case=direct-rules-only&id=login-gpt&route=direct",
+      "case": "direct-rules-only",
+      "id": "login-gpt",
+      "route": "direct",
+      "at": 1791197682126
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/favicon.ico",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197682146
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/fixture?route=direct&phase=direct-heuristics-only",
+      "case": null,
+      "id": null,
+      "route": "direct",
+      "at": 1791197687372
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/normal.png",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197687396
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/sdk/prebid.js?case=direct-heuristics-only&id=first-prebid&route=direct",
+      "case": "direct-heuristics-only",
+      "id": "first-prebid",
+      "route": "direct",
+      "at": 1791197687398
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/tag/js/gpt.js?case=direct-heuristics-only&id=first-gpt&route=direct",
+      "case": "direct-heuristics-only",
+      "id": "first-gpt",
+      "route": "direct",
+      "at": 1791197687401
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/js/sdkloader/ima3.js?case=direct-heuristics-only&id=first-ima&route=direct",
+      "case": "direct-heuristics-only",
+      "id": "first-ima",
+      "route": "direct",
+      "at": 1791197687401
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/gpt.js?case=direct-heuristics-only&id=short-gpt&route=direct",
+      "case": "direct-heuristics-only",
+      "id": "short-gpt",
+      "route": "direct",
+      "at": 1791197687402
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/docs/prebid.js?case=direct-heuristics-only&id=docs-prebid&route=direct",
+      "case": "direct-heuristics-only",
+      "id": "docs-prebid",
+      "route": "direct",
+      "at": 1791197687402
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/login/tag/js/gpt.js?case=direct-heuristics-only&id=login-gpt&route=direct",
+      "case": "direct-heuristics-only",
+      "id": "login-gpt",
+      "route": "direct",
+      "at": 1791197687402
+    },
+    {
+      "host": "doubleclick.com:56300",
+      "url": "/normal-domain-only.js?case=direct-heuristics-only&id=normal-domain-only&route=direct",
+      "case": "direct-heuristics-only",
+      "id": "normal-domain-only",
+      "route": "direct",
+      "at": 1791197687405
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/favicon.ico",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197687416
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/fixture?route=direct&phase=direct-combined",
+      "case": null,
+      "id": null,
+      "route": "direct",
+      "at": 1791197692450
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/normal.png",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197692475
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/sdk/prebid.js?case=direct-combined&id=first-prebid&route=direct",
+      "case": "direct-combined",
+      "id": "first-prebid",
+      "route": "direct",
+      "at": 1791197692478
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/tag/js/gpt.js?case=direct-combined&id=first-gpt&route=direct",
+      "case": "direct-combined",
+      "id": "first-gpt",
+      "route": "direct",
+      "at": 1791197692478
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/js/sdkloader/ima3.js?case=direct-combined&id=first-ima&route=direct",
+      "case": "direct-combined",
+      "id": "first-ima",
+      "route": "direct",
+      "at": 1791197692479
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/gpt.js?case=direct-combined&id=short-gpt&route=direct",
+      "case": "direct-combined",
+      "id": "short-gpt",
+      "route": "direct",
+      "at": 1791197692480
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/docs/prebid.js?case=direct-combined&id=docs-prebid&route=direct",
+      "case": "direct-combined",
+      "id": "docs-prebid",
+      "route": "direct",
+      "at": 1791197692481
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/login/tag/js/gpt.js?case=direct-combined&id=login-gpt&route=direct",
+      "case": "direct-combined",
+      "id": "login-gpt",
+      "route": "direct",
+      "at": 1791197692481
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/favicon.ico",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197692494
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/fixture?route=direct&phase=direct-allowed",
+      "case": null,
+      "id": null,
+      "route": "direct",
+      "at": 1791197698539
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/normal.png",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197698560
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/sdk/prebid.js?case=direct-allowed&id=third-prebid&route=direct",
+      "case": "direct-allowed",
+      "id": "third-prebid",
+      "route": "direct",
+      "at": 1791197698562
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/sdk/prebid.js?case=direct-allowed&id=first-prebid&route=direct",
+      "case": "direct-allowed",
+      "id": "first-prebid",
+      "route": "direct",
+      "at": 1791197698564
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/tag/js/gpt.js?case=direct-allowed&id=first-gpt&route=direct",
+      "case": "direct-allowed",
+      "id": "first-gpt",
+      "route": "direct",
+      "at": 1791197698565
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/tag/js/gpt.js?case=direct-allowed&id=third-gpt&route=direct",
+      "case": "direct-allowed",
+      "id": "third-gpt",
+      "route": "direct",
+      "at": 1791197698565
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/js/sdkloader/ima3.js?case=direct-allowed&id=third-ima&route=direct",
+      "case": "direct-allowed",
+      "id": "third-ima",
+      "route": "direct",
+      "at": 1791197698565
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/js/sdkloader/ima3.js?case=direct-allowed&id=first-ima&route=direct",
+      "case": "direct-allowed",
+      "id": "first-ima",
+      "route": "direct",
+      "at": 1791197698568
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/gpt.js?case=direct-allowed&id=short-gpt&route=direct",
+      "case": "direct-allowed",
+      "id": "short-gpt",
+      "route": "direct",
+      "at": 1791197698568
+    },
+    {
+      "host": "doubleclick.com:56300",
+      "url": "/normal-domain-only.js?case=direct-allowed&id=normal-domain-only&route=direct",
+      "case": "direct-allowed",
+      "id": "normal-domain-only",
+      "route": "direct",
+      "at": 1791197698574
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/docs/prebid.js?case=direct-allowed&id=docs-prebid&route=direct",
+      "case": "direct-allowed",
+      "id": "docs-prebid",
+      "route": "direct",
+      "at": 1791197698574
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/login/tag/js/gpt.js?case=direct-allowed&id=login-gpt&route=direct",
+      "case": "direct-allowed",
+      "id": "login-gpt",
+      "route": "direct",
+      "at": 1791197698574
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/favicon.ico",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197698594
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/fixture?route=direct&phase=direct-stopped",
+      "case": null,
+      "id": null,
+      "route": "direct",
+      "at": 1791197721190
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/normal.png",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197721210
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/sdk/prebid.js?case=direct-stopped&id=third-prebid&route=direct",
+      "case": "direct-stopped",
+      "id": "third-prebid",
+      "route": "direct",
+      "at": 1791197721217
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/tag/js/gpt.js?case=direct-stopped&id=third-gpt&route=direct",
+      "case": "direct-stopped",
+      "id": "third-gpt",
+      "route": "direct",
+      "at": 1791197721217
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/js/sdkloader/ima3.js?case=direct-stopped&id=third-ima&route=direct",
+      "case": "direct-stopped",
+      "id": "third-ima",
+      "route": "direct",
+      "at": 1791197721217
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/sdk/prebid.js?case=direct-stopped&id=first-prebid&route=direct",
+      "case": "direct-stopped",
+      "id": "first-prebid",
+      "route": "direct",
+      "at": 1791197721218
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/tag/js/gpt.js?case=direct-stopped&id=first-gpt&route=direct",
+      "case": "direct-stopped",
+      "id": "first-gpt",
+      "route": "direct",
+      "at": 1791197721218
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/js/sdkloader/ima3.js?case=direct-stopped&id=first-ima&route=direct",
+      "case": "direct-stopped",
+      "id": "first-ima",
+      "route": "direct",
+      "at": 1791197721224
+    },
+    {
+      "host": "doubleclick.com:56300",
+      "url": "/normal-domain-only.js?case=direct-stopped&id=normal-domain-only&route=direct",
+      "case": "direct-stopped",
+      "id": "normal-domain-only",
+      "route": "direct",
+      "at": 1791197721224
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/gpt.js?case=direct-stopped&id=short-gpt&route=direct",
+      "case": "direct-stopped",
+      "id": "short-gpt",
+      "route": "direct",
+      "at": 1791197721225
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/docs/prebid.js?case=direct-stopped&id=docs-prebid&route=direct",
+      "case": "direct-stopped",
+      "id": "docs-prebid",
+      "route": "direct",
+      "at": 1791197721225
+    },
+    {
+      "host": "localhost:56300",
+      "url": "/login/tag/js/gpt.js?case=direct-stopped&id=login-gpt&route=direct",
+      "case": "direct-stopped",
+      "id": "login-gpt",
+      "route": "direct",
+      "at": 1791197721225
+    },
+    {
+      "host": "127.0.0.1:56300",
+      "url": "/favicon.ico",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197721235
+    },
+    {
+      "host": "edge.microsoft.com",
+      "url": "/browsernetworktime/time/1/current?cup2key=2:qucpKFXvDchoGCsj735g-YKXj4XFr2Iiw78Fr_xRAko&cup2hreq=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197722207
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/fixture?route=http&phase=http-off",
+      "case": null,
+      "id": null,
+      "route": "http",
+      "at": 1791197722356
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/normal.png",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197722389
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/sdk/prebid.js?case=http-off&id=third-prebid&route=http",
+      "case": "http-off",
+      "id": "third-prebid",
+      "route": "http",
+      "at": 1791197722395
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/tag/js/gpt.js?case=http-off&id=third-gpt&route=http",
+      "case": "http-off",
+      "id": "third-gpt",
+      "route": "http",
+      "at": 1791197722395
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=http-off&id=third-ima&route=http",
+      "case": "http-off",
+      "id": "third-ima",
+      "route": "http",
+      "at": 1791197722395
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/sdk/prebid.js?case=http-off&id=first-prebid&route=http",
+      "case": "http-off",
+      "id": "first-prebid",
+      "route": "http",
+      "at": 1791197722396
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/tag/js/gpt.js?case=http-off&id=first-gpt&route=http",
+      "case": "http-off",
+      "id": "first-gpt",
+      "route": "http",
+      "at": 1791197722396
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=http-off&id=first-ima&route=http",
+      "case": "http-off",
+      "id": "first-ima",
+      "route": "http",
+      "at": 1791197722401
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/gpt.js?case=http-off&id=short-gpt&route=http",
+      "case": "http-off",
+      "id": "short-gpt",
+      "route": "http",
+      "at": 1791197722401
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/docs/prebid.js?case=http-off&id=docs-prebid&route=http",
+      "case": "http-off",
+      "id": "docs-prebid",
+      "route": "http",
+      "at": 1791197722402
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/login/tag/js/gpt.js?case=http-off&id=login-gpt&route=http",
+      "case": "http-off",
+      "id": "login-gpt",
+      "route": "http",
+      "at": 1791197722402
+    },
+    {
+      "host": "doubleclick.com:56300",
+      "url": "/normal-domain-only.js?case=http-off&id=normal-domain-only&route=http",
+      "case": "http-off",
+      "id": "normal-domain-only",
+      "route": "http",
+      "at": 1791197722411
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/favicon.ico",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197722423
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/fixture?route=http&phase=http-rules-only",
+      "case": null,
+      "id": null,
+      "route": "http",
+      "at": 1791197727311
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/normal.png",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197727336
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/sdk/prebid.js?case=http-rules-only&id=third-prebid&route=http",
+      "case": "http-rules-only",
+      "id": "third-prebid",
+      "route": "http",
+      "at": 1791197727345
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/tag/js/gpt.js?case=http-rules-only&id=third-gpt&route=http",
+      "case": "http-rules-only",
+      "id": "third-gpt",
+      "route": "http",
+      "at": 1791197727348
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=http-rules-only&id=third-ima&route=http",
+      "case": "http-rules-only",
+      "id": "third-ima",
+      "route": "http",
+      "at": 1791197727351
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/sdk/prebid.js?case=http-rules-only&id=first-prebid&route=http",
+      "case": "http-rules-only",
+      "id": "first-prebid",
+      "route": "http",
+      "at": 1791197727351
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/tag/js/gpt.js?case=http-rules-only&id=first-gpt&route=http",
+      "case": "http-rules-only",
+      "id": "first-gpt",
+      "route": "http",
+      "at": 1791197727351
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=http-rules-only&id=first-ima&route=http",
+      "case": "http-rules-only",
+      "id": "first-ima",
+      "route": "http",
+      "at": 1791197727351
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/gpt.js?case=http-rules-only&id=short-gpt&route=http",
+      "case": "http-rules-only",
+      "id": "short-gpt",
+      "route": "http",
+      "at": 1791197727354
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/docs/prebid.js?case=http-rules-only&id=docs-prebid&route=http",
+      "case": "http-rules-only",
+      "id": "docs-prebid",
+      "route": "http",
+      "at": 1791197727354
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/login/tag/js/gpt.js?case=http-rules-only&id=login-gpt&route=http",
+      "case": "http-rules-only",
+      "id": "login-gpt",
+      "route": "http",
+      "at": 1791197727354
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/favicon.ico",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197727384
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/fixture?route=http&phase=http-heuristics-only",
+      "case": null,
+      "id": null,
+      "route": "http",
+      "at": 1791197732586
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/normal.png",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197732613
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/sdk/prebid.js?case=http-heuristics-only&id=first-prebid&route=http",
+      "case": "http-heuristics-only",
+      "id": "first-prebid",
+      "route": "http",
+      "at": 1791197732617
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/tag/js/gpt.js?case=http-heuristics-only&id=first-gpt&route=http",
+      "case": "http-heuristics-only",
+      "id": "first-gpt",
+      "route": "http",
+      "at": 1791197732617
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=http-heuristics-only&id=first-ima&route=http",
+      "case": "http-heuristics-only",
+      "id": "first-ima",
+      "route": "http",
+      "at": 1791197732620
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/gpt.js?case=http-heuristics-only&id=short-gpt&route=http",
+      "case": "http-heuristics-only",
+      "id": "short-gpt",
+      "route": "http",
+      "at": 1791197732622
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/docs/prebid.js?case=http-heuristics-only&id=docs-prebid&route=http",
+      "case": "http-heuristics-only",
+      "id": "docs-prebid",
+      "route": "http",
+      "at": 1791197732623
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/login/tag/js/gpt.js?case=http-heuristics-only&id=login-gpt&route=http",
+      "case": "http-heuristics-only",
+      "id": "login-gpt",
+      "route": "http",
+      "at": 1791197732623
+    },
+    {
+      "host": "doubleclick.com:56300",
+      "url": "/normal-domain-only.js?case=http-heuristics-only&id=normal-domain-only&route=http",
+      "case": "http-heuristics-only",
+      "id": "normal-domain-only",
+      "route": "http",
+      "at": 1791197732623
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/favicon.ico",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197732634
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/fixture?route=http&phase=http-combined",
+      "case": null,
+      "id": null,
+      "route": "http",
+      "at": 1791197737663
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/normal.png",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197737684
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/sdk/prebid.js?case=http-combined&id=first-prebid&route=http",
+      "case": "http-combined",
+      "id": "first-prebid",
+      "route": "http",
+      "at": 1791197737694
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/tag/js/gpt.js?case=http-combined&id=first-gpt&route=http",
+      "case": "http-combined",
+      "id": "first-gpt",
+      "route": "http",
+      "at": 1791197737694
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=http-combined&id=first-ima&route=http",
+      "case": "http-combined",
+      "id": "first-ima",
+      "route": "http",
+      "at": 1791197737697
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/gpt.js?case=http-combined&id=short-gpt&route=http",
+      "case": "http-combined",
+      "id": "short-gpt",
+      "route": "http",
+      "at": 1791197737697
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/docs/prebid.js?case=http-combined&id=docs-prebid&route=http",
+      "case": "http-combined",
+      "id": "docs-prebid",
+      "route": "http",
+      "at": 1791197737697
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/login/tag/js/gpt.js?case=http-combined&id=login-gpt&route=http",
+      "case": "http-combined",
+      "id": "login-gpt",
+      "route": "http",
+      "at": 1791197737699
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/favicon.ico",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197737718
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/fixture?route=http&phase=http-allowed",
+      "case": null,
+      "id": null,
+      "route": "http",
+      "at": 1791197743750
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/normal.png",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197743773
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/sdk/prebid.js?case=http-allowed&id=third-prebid&route=http",
+      "case": "http-allowed",
+      "id": "third-prebid",
+      "route": "http",
+      "at": 1791197743781
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/tag/js/gpt.js?case=http-allowed&id=third-gpt&route=http",
+      "case": "http-allowed",
+      "id": "third-gpt",
+      "route": "http",
+      "at": 1791197743782
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=http-allowed&id=third-ima&route=http",
+      "case": "http-allowed",
+      "id": "third-ima",
+      "route": "http",
+      "at": 1791197743788
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/sdk/prebid.js?case=http-allowed&id=first-prebid&route=http",
+      "case": "http-allowed",
+      "id": "first-prebid",
+      "route": "http",
+      "at": 1791197743789
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/tag/js/gpt.js?case=http-allowed&id=first-gpt&route=http",
+      "case": "http-allowed",
+      "id": "first-gpt",
+      "route": "http",
+      "at": 1791197743789
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=http-allowed&id=first-ima&route=http",
+      "case": "http-allowed",
+      "id": "first-ima",
+      "route": "http",
+      "at": 1791197743789
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/gpt.js?case=http-allowed&id=short-gpt&route=http",
+      "case": "http-allowed",
+      "id": "short-gpt",
+      "route": "http",
+      "at": 1791197743792
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/docs/prebid.js?case=http-allowed&id=docs-prebid&route=http",
+      "case": "http-allowed",
+      "id": "docs-prebid",
+      "route": "http",
+      "at": 1791197743792
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/login/tag/js/gpt.js?case=http-allowed&id=login-gpt&route=http",
+      "case": "http-allowed",
+      "id": "login-gpt",
+      "route": "http",
+      "at": 1791197743792
+    },
+    {
+      "host": "doubleclick.com:56300",
+      "url": "/normal-domain-only.js?case=http-allowed&id=normal-domain-only&route=http",
+      "case": "http-allowed",
+      "id": "normal-domain-only",
+      "route": "http",
+      "at": 1791197743792
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/favicon.ico",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197743809
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/fixture?route=http&phase=http-stopped",
+      "case": null,
+      "id": null,
+      "route": "http",
+      "at": 1791197772381
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/normal.png",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197772408
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/sdk/prebid.js?case=http-stopped&id=third-prebid&route=http",
+      "case": "http-stopped",
+      "id": "third-prebid",
+      "route": "http",
+      "at": 1791197772410
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/tag/js/gpt.js?case=http-stopped&id=third-gpt&route=http",
+      "case": "http-stopped",
+      "id": "third-gpt",
+      "route": "http",
+      "at": 1791197772412
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=http-stopped&id=third-ima&route=http",
+      "case": "http-stopped",
+      "id": "third-ima",
+      "route": "http",
+      "at": 1791197772416
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/sdk/prebid.js?case=http-stopped&id=first-prebid&route=http",
+      "case": "http-stopped",
+      "id": "first-prebid",
+      "route": "http",
+      "at": 1791197772416
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/tag/js/gpt.js?case=http-stopped&id=first-gpt&route=http",
+      "case": "http-stopped",
+      "id": "first-gpt",
+      "route": "http",
+      "at": 1791197772416
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=http-stopped&id=first-ima&route=http",
+      "case": "http-stopped",
+      "id": "first-ima",
+      "route": "http",
+      "at": 1791197772417
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/gpt.js?case=http-stopped&id=short-gpt&route=http",
+      "case": "http-stopped",
+      "id": "short-gpt",
+      "route": "http",
+      "at": 1791197772419
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/docs/prebid.js?case=http-stopped&id=docs-prebid&route=http",
+      "case": "http-stopped",
+      "id": "docs-prebid",
+      "route": "http",
+      "at": 1791197772419
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/login/tag/js/gpt.js?case=http-stopped&id=login-gpt&route=http",
+      "case": "http-stopped",
+      "id": "login-gpt",
+      "route": "http",
+      "at": 1791197772419
+    },
+    {
+      "host": "doubleclick.com:56300",
+      "url": "/normal-domain-only.js?case=http-stopped&id=normal-domain-only&route=http",
+      "case": "http-stopped",
+      "id": "normal-domain-only",
+      "route": "http",
+      "at": 1791197772419
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/favicon.ico",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197772432
+    },
+    {
+      "host": "edge.microsoft.com",
+      "url": "/browsernetworktime/time/1/current?cup2key=2:4zb_x25fJ9eHc2UxuUF9-oQrS0peCK8v3BSOfVJ_d8k&cup2hreq=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197773367
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/fixture?route=socks5&phase=socks5-off",
+      "case": null,
+      "id": null,
+      "route": "socks5",
+      "at": 1791197773532
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/normal.png",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197773562
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/sdk/prebid.js?case=socks5-off&id=first-prebid&route=socks5",
+      "case": "socks5-off",
+      "id": "first-prebid",
+      "route": "socks5",
+      "at": 1791197773580
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/sdk/prebid.js?case=socks5-off&id=third-prebid&route=socks5",
+      "case": "socks5-off",
+      "id": "third-prebid",
+      "route": "socks5",
+      "at": 1791197773581
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/tag/js/gpt.js?case=socks5-off&id=third-gpt&route=socks5",
+      "case": "socks5-off",
+      "id": "third-gpt",
+      "route": "socks5",
+      "at": 1791197773582
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=socks5-off&id=third-ima&route=socks5",
+      "case": "socks5-off",
+      "id": "third-ima",
+      "route": "socks5",
+      "at": 1791197773582
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/tag/js/gpt.js?case=socks5-off&id=first-gpt&route=socks5",
+      "case": "socks5-off",
+      "id": "first-gpt",
+      "route": "socks5",
+      "at": 1791197773582
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=socks5-off&id=first-ima&route=socks5",
+      "case": "socks5-off",
+      "id": "first-ima",
+      "route": "socks5",
+      "at": 1791197773583
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/gpt.js?case=socks5-off&id=short-gpt&route=socks5",
+      "case": "socks5-off",
+      "id": "short-gpt",
+      "route": "socks5",
+      "at": 1791197773584
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/docs/prebid.js?case=socks5-off&id=docs-prebid&route=socks5",
+      "case": "socks5-off",
+      "id": "docs-prebid",
+      "route": "socks5",
+      "at": 1791197773584
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/login/tag/js/gpt.js?case=socks5-off&id=login-gpt&route=socks5",
+      "case": "socks5-off",
+      "id": "login-gpt",
+      "route": "socks5",
+      "at": 1791197773584
+    },
+    {
+      "host": "doubleclick.com:56300",
+      "url": "/normal-domain-only.js?case=socks5-off&id=normal-domain-only&route=socks5",
+      "case": "socks5-off",
+      "id": "normal-domain-only",
+      "route": "socks5",
+      "at": 1791197773589
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/favicon.ico",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197773609
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/fixture?route=socks5&phase=socks5-rules-only",
+      "case": null,
+      "id": null,
+      "route": "socks5",
+      "at": 1791197778476
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/normal.png",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197778505
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/sdk/prebid.js?case=socks5-rules-only&id=third-prebid&route=socks5",
+      "case": "socks5-rules-only",
+      "id": "third-prebid",
+      "route": "socks5",
+      "at": 1791197778507
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/tag/js/gpt.js?case=socks5-rules-only&id=third-gpt&route=socks5",
+      "case": "socks5-rules-only",
+      "id": "third-gpt",
+      "route": "socks5",
+      "at": 1791197778510
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=socks5-rules-only&id=third-ima&route=socks5",
+      "case": "socks5-rules-only",
+      "id": "third-ima",
+      "route": "socks5",
+      "at": 1791197778512
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/sdk/prebid.js?case=socks5-rules-only&id=first-prebid&route=socks5",
+      "case": "socks5-rules-only",
+      "id": "first-prebid",
+      "route": "socks5",
+      "at": 1791197778512
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/tag/js/gpt.js?case=socks5-rules-only&id=first-gpt&route=socks5",
+      "case": "socks5-rules-only",
+      "id": "first-gpt",
+      "route": "socks5",
+      "at": 1791197778512
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=socks5-rules-only&id=first-ima&route=socks5",
+      "case": "socks5-rules-only",
+      "id": "first-ima",
+      "route": "socks5",
+      "at": 1791197778513
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/gpt.js?case=socks5-rules-only&id=short-gpt&route=socks5",
+      "case": "socks5-rules-only",
+      "id": "short-gpt",
+      "route": "socks5",
+      "at": 1791197778514
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/docs/prebid.js?case=socks5-rules-only&id=docs-prebid&route=socks5",
+      "case": "socks5-rules-only",
+      "id": "docs-prebid",
+      "route": "socks5",
+      "at": 1791197778514
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/login/tag/js/gpt.js?case=socks5-rules-only&id=login-gpt&route=socks5",
+      "case": "socks5-rules-only",
+      "id": "login-gpt",
+      "route": "socks5",
+      "at": 1791197778514
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/favicon.ico",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197778538
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/fixture?route=socks5&phase=socks5-heuristics-only",
+      "case": null,
+      "id": null,
+      "route": "socks5",
+      "at": 1791197783760
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/normal.png",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197783785
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/sdk/prebid.js?case=socks5-heuristics-only&id=first-prebid&route=socks5",
+      "case": "socks5-heuristics-only",
+      "id": "first-prebid",
+      "route": "socks5",
+      "at": 1791197783792
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/tag/js/gpt.js?case=socks5-heuristics-only&id=first-gpt&route=socks5",
+      "case": "socks5-heuristics-only",
+      "id": "first-gpt",
+      "route": "socks5",
+      "at": 1791197783793
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=socks5-heuristics-only&id=first-ima&route=socks5",
+      "case": "socks5-heuristics-only",
+      "id": "first-ima",
+      "route": "socks5",
+      "at": 1791197783794
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/gpt.js?case=socks5-heuristics-only&id=short-gpt&route=socks5",
+      "case": "socks5-heuristics-only",
+      "id": "short-gpt",
+      "route": "socks5",
+      "at": 1791197783795
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/docs/prebid.js?case=socks5-heuristics-only&id=docs-prebid&route=socks5",
+      "case": "socks5-heuristics-only",
+      "id": "docs-prebid",
+      "route": "socks5",
+      "at": 1791197783796
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/login/tag/js/gpt.js?case=socks5-heuristics-only&id=login-gpt&route=socks5",
+      "case": "socks5-heuristics-only",
+      "id": "login-gpt",
+      "route": "socks5",
+      "at": 1791197783796
+    },
+    {
+      "host": "doubleclick.com:56300",
+      "url": "/normal-domain-only.js?case=socks5-heuristics-only&id=normal-domain-only&route=socks5",
+      "case": "socks5-heuristics-only",
+      "id": "normal-domain-only",
+      "route": "socks5",
+      "at": 1791197783797
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/favicon.ico",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197783808
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/fixture?route=socks5&phase=socks5-combined",
+      "case": null,
+      "id": null,
+      "route": "socks5",
+      "at": 1791197788831
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/normal.png",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197788856
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/sdk/prebid.js?case=socks5-combined&id=first-prebid&route=socks5",
+      "case": "socks5-combined",
+      "id": "first-prebid",
+      "route": "socks5",
+      "at": 1791197788862
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/tag/js/gpt.js?case=socks5-combined&id=first-gpt&route=socks5",
+      "case": "socks5-combined",
+      "id": "first-gpt",
+      "route": "socks5",
+      "at": 1791197788862
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=socks5-combined&id=first-ima&route=socks5",
+      "case": "socks5-combined",
+      "id": "first-ima",
+      "route": "socks5",
+      "at": 1791197788863
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/gpt.js?case=socks5-combined&id=short-gpt&route=socks5",
+      "case": "socks5-combined",
+      "id": "short-gpt",
+      "route": "socks5",
+      "at": 1791197788864
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/docs/prebid.js?case=socks5-combined&id=docs-prebid&route=socks5",
+      "case": "socks5-combined",
+      "id": "docs-prebid",
+      "route": "socks5",
+      "at": 1791197788864
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/login/tag/js/gpt.js?case=socks5-combined&id=login-gpt&route=socks5",
+      "case": "socks5-combined",
+      "id": "login-gpt",
+      "route": "socks5",
+      "at": 1791197788865
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/favicon.ico",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197788885
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/fixture?route=socks5&phase=socks5-allowed",
+      "case": null,
+      "id": null,
+      "route": "socks5",
+      "at": 1791197794911
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/normal.png",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197794936
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/sdk/prebid.js?case=socks5-allowed&id=third-prebid&route=socks5",
+      "case": "socks5-allowed",
+      "id": "third-prebid",
+      "route": "socks5",
+      "at": 1791197794943
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/tag/js/gpt.js?case=socks5-allowed&id=third-gpt&route=socks5",
+      "case": "socks5-allowed",
+      "id": "third-gpt",
+      "route": "socks5",
+      "at": 1791197794943
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=socks5-allowed&id=third-ima&route=socks5",
+      "case": "socks5-allowed",
+      "id": "third-ima",
+      "route": "socks5",
+      "at": 1791197794944
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/sdk/prebid.js?case=socks5-allowed&id=first-prebid&route=socks5",
+      "case": "socks5-allowed",
+      "id": "first-prebid",
+      "route": "socks5",
+      "at": 1791197794947
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/tag/js/gpt.js?case=socks5-allowed&id=first-gpt&route=socks5",
+      "case": "socks5-allowed",
+      "id": "first-gpt",
+      "route": "socks5",
+      "at": 1791197794947
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=socks5-allowed&id=first-ima&route=socks5",
+      "case": "socks5-allowed",
+      "id": "first-ima",
+      "route": "socks5",
+      "at": 1791197794948
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/gpt.js?case=socks5-allowed&id=short-gpt&route=socks5",
+      "case": "socks5-allowed",
+      "id": "short-gpt",
+      "route": "socks5",
+      "at": 1791197794949
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/docs/prebid.js?case=socks5-allowed&id=docs-prebid&route=socks5",
+      "case": "socks5-allowed",
+      "id": "docs-prebid",
+      "route": "socks5",
+      "at": 1791197794950
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/login/tag/js/gpt.js?case=socks5-allowed&id=login-gpt&route=socks5",
+      "case": "socks5-allowed",
+      "id": "login-gpt",
+      "route": "socks5",
+      "at": 1791197794952
+    },
+    {
+      "host": "doubleclick.com:56300",
+      "url": "/normal-domain-only.js?case=socks5-allowed&id=normal-domain-only&route=socks5",
+      "case": "socks5-allowed",
+      "id": "normal-domain-only",
+      "route": "socks5",
+      "at": 1791197794952
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/favicon.ico",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197794971
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/fixture?route=socks5&phase=socks5-stopped",
+      "case": null,
+      "id": null,
+      "route": "socks5",
+      "at": 1791197817564
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/normal.png",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197817589
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/sdk/prebid.js?case=socks5-stopped&id=third-prebid&route=socks5",
+      "case": "socks5-stopped",
+      "id": "third-prebid",
+      "route": "socks5",
+      "at": 1791197817595
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/tag/js/gpt.js?case=socks5-stopped&id=third-gpt&route=socks5",
+      "case": "socks5-stopped",
+      "id": "third-gpt",
+      "route": "socks5",
+      "at": 1791197817596
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=socks5-stopped&id=third-ima&route=socks5",
+      "case": "socks5-stopped",
+      "id": "third-ima",
+      "route": "socks5",
+      "at": 1791197817596
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/sdk/prebid.js?case=socks5-stopped&id=first-prebid&route=socks5",
+      "case": "socks5-stopped",
+      "id": "first-prebid",
+      "route": "socks5",
+      "at": 1791197817597
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/tag/js/gpt.js?case=socks5-stopped&id=first-gpt&route=socks5",
+      "case": "socks5-stopped",
+      "id": "first-gpt",
+      "route": "socks5",
+      "at": 1791197817598
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/js/sdkloader/ima3.js?case=socks5-stopped&id=first-ima&route=socks5",
+      "case": "socks5-stopped",
+      "id": "first-ima",
+      "route": "socks5",
+      "at": 1791197817600
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/gpt.js?case=socks5-stopped&id=short-gpt&route=socks5",
+      "case": "socks5-stopped",
+      "id": "short-gpt",
+      "route": "socks5",
+      "at": 1791197817601
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/docs/prebid.js?case=socks5-stopped&id=docs-prebid&route=socks5",
+      "case": "socks5-stopped",
+      "id": "docs-prebid",
+      "route": "socks5",
+      "at": 1791197817602
+    },
+    {
+      "host": "qa-sdk.invalid:56300",
+      "url": "/login/tag/js/gpt.js?case=socks5-stopped&id=login-gpt&route=socks5",
+      "case": "socks5-stopped",
+      "id": "login-gpt",
+      "route": "socks5",
+      "at": 1791197817603
+    },
+    {
+      "host": "doubleclick.com:56300",
+      "url": "/normal-domain-only.js?case=socks5-stopped&id=normal-domain-only&route=socks5",
+      "case": "socks5-stopped",
+      "id": "normal-domain-only",
+      "route": "socks5",
+      "at": 1791197817603
+    },
+    {
+      "host": "qa-publisher.invalid:56300",
+      "url": "/favicon.ico",
+      "case": null,
+      "id": null,
+      "route": null,
+      "at": 1791197817614
+    }
+  ],
+  "status": "Pass"
+}

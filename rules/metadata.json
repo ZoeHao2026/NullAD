@@ -1,0 +1,55 @@
+{
+  "generator": 1,
+  "upstream": "easylist/easylist",
+  "commit": "129e63db3096f78e6dc94ac7ca6a15e27b5d1b79",
+  "upstream_date": "2026-10-05T10:22:01Z",
+  "domain_count": 44442,
+  "exception_hosts": 1247,
+  "license": "CC-BY-SA-3.0",
+  "source_home": "https://easylist.to/",
+  "changes": "Only unconditional ||ASCII-domain^ rules extracted, deduplicated and sorted; literal-host exceptions (even path/type-specific), their ancestor blocks and child domains excluded; two local business endpoints excluded; redundant child rules removed; independent original local domains included. Generic/regex ABP exceptions cannot be expressed by this domain-only subset; it is not full ABP list execution.",
+  "source_inputs": [
+    {
+      "file": "easylist-adservers.source",
+      "path": "easylist/easylist_adservers.txt",
+      "url": "https://raw.githubusercontent.com/easylist/easylist/129e63db3096f78e6dc94ac7ca6a15e27b5d1b79/easylist/easylist_adservers.txt",
+      "sha256": "b066c1919631b72f65bb3f0b6a13853ab8a59ffb14a5908357acf6625bdd5e0f"
+    },
+    {
+      "file": "easyprivacy-trackingservers.source",
+      "path": "easyprivacy/easyprivacy_trackingservers.txt",
+      "url": "https://raw.githubusercontent.com/easylist/easylist/129e63db3096f78e6dc94ac7ca6a15e27b5d1b79/easyprivacy/easyprivacy_trackingservers.txt",
+      "sha256": "df240b596ceb5833287704cfe455d047ffd2a09804ac82782e077e17c1b55fec"
+    },
+    {
+      "file": "easyprivacy-trackingservers-general.source",
+      "path": "easyprivacy/easyprivacy_trackingservers_general.txt",
+      "url": "https://raw.githubusercontent.com/easylist/easylist/129e63db3096f78e6dc94ac7ca6a15e27b5d1b79/easyprivacy/easyprivacy_trackingservers_general.txt",
+      "sha256": "bfd7fd106045b25c381fe322318179512073d0b9c8b8ec5090291ea3dd08ca0a"
+    },
+    {
+      "file": "easyprivacy-trackingservers-international.source",
+      "path": "easyprivacy/easyprivacy_trackingservers_international.txt",
+      "url": "https://raw.githubusercontent.com/easylist/easylist/129e63db3096f78e6dc94ac7ca6a15e27b5d1b79/easyprivacy/easyprivacy_trackingservers_international.txt",
+      "sha256": "9c67cc2d4ae438526b2fdfa1a07b21d286273684647cc381f2d0441eb19c5d42"
+    },
+    {
+      "file": "easylist-allowlist.source",
+      "path": "easylist/easylist_allowlist.txt",
+      "url": "https://raw.githubusercontent.com/easylist/easylist/129e63db3096f78e6dc94ac7ca6a15e27b5d1b79/easylist/easylist_allowlist.txt",
+      "sha256": "89186dfaad8e732bff48a77d5520c53b2f2019f919423ff7656fe39b5a3bf5f1"
+    },
+    {
+      "file": "easyprivacy-allowlist.source",
+      "path": "easyprivacy/easyprivacy_allowlist.txt",
+      "url": "https://raw.githubusercontent.com/easylist/easylist/129e63db3096f78e6dc94ac7ca6a15e27b5d1b79/easyprivacy/easyprivacy_allowlist.txt",
+      "sha256": "33f2b0bea0630c44b858bdf5ba2c835a4a86d8d1e60637899023adf1c16dfc68"
+    },
+    {
+      "file": "easyprivacy-allowlist-international.source",
+      "path": "easyprivacy/easyprivacy_allowlist_international.txt",
+      "url": "https://raw.githubusercontent.com/easylist/easylist/129e63db3096f78e6dc94ac7ca6a15e27b5d1b79/easyprivacy/easyprivacy_allowlist_international.txt",
+      "sha256": "8fec385bf83c55b857ad208342c4dd060069885fe482f7ef97664607d0cf7acf"
+    }
+  ]
+}

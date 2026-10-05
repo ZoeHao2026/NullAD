@@ -24,10 +24,30 @@ pub mod settings;
 pub mod state;
 pub mod updater;
 
-pub use settings::{AppSettings, ListEntry, ListSource};
+pub use nullad_host::{RestoreItem, RestoreReport};
+pub use settings::{normalize_allowed_hosts, AppSettings, ListEntry, ListSource, SettingsPatch};
 pub use state::{AppHandle, AppState, ProtectionStatus, RunningProtection};
 pub use updater::{ListLoader, LoadOutcome};
 
 /// Re-exported so a UI crate only needs to depend on `nullad-core`.
-pub use nullad_api::{FilterListInfo, LogEntry, ProtectionState, StatusReport};
+pub use nullad_api::{FilterListInfo, HeuristicMode, LogEntry, ProtectionState, StatusReport};
 pub use nullad_api::{RuleSetStatsDto, StatsSnapshotDto};
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    pub fn directory() -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let directory = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join(format!(
+                "nullad-test-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+        std::fs::create_dir_all(&directory).unwrap();
+        directory
+    }
+}

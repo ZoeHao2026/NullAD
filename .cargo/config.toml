@@ -1,33 +1,5 @@
-# NullAD build configuration.
-#
-# ## Why this file exists
-#
-# This host has no working system TLS stack: Windows Schannel fails host-wide
-# with SEC_E_NO_CREDENTIALS, so curl, git and cargo cannot reach crates.io (the
-# failure replicates even through the local HTTP proxy on 127.0.0.1:7897).
-# NullAD therefore builds entirely from a local cargo registry cache, and this
-# file makes that guarantee explicit rather than incidental.
-#
-# ## Why CARGO_HOME is redirected
-#
-# The machine-global cargo home lives outside the project sandbox and is
-# read-only to it. Cargo needs to *write* into its registry directory whenever
-# it unpacks a crate, so a read-only cache fails with "Access is denied" the
-# moment a version other than an already-extracted one is selected.
-#
-# `.cargo-home/` is a workspace-local cargo home seeded from the global one.
-# It is git-ignored: it is machine state, not source.
-#
-# ## Reproducibility
-#
-# `offline = true` means cargo fails loudly instead of silently reaching for
-# the network, so Cargo.lock is authoritative and must be committed.
-[net]
-offline = true
-
-[build]
-incremental = true
-
+# Normal Cargo networking/cache. Opt in to offline builds with --offline
+# or CARGO_NET_OFFLINE=true after pre-seeding dependencies.
 [alias]
 bench-all = "run --release -p nullad-cli -- bench"
 check-all = "check --workspace --all-targets"

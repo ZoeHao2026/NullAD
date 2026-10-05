@@ -10,8 +10,7 @@ Thumbs.db
 /state/
 /lists/cache/
 
-# Machine-local cargo home, seeded from the global registry cache.
-# Hundreds of megabytes of third-party crate sources; see .cargo/config.toml.
+# Legacy local dependency caches are not distributable artifacts.
 /.cargo-home/
 
 # Local test artifacts
@@ -21,3 +20,9 @@ Thumbs.db
 
 # Never commit temporary system-file backups
 .hosts-bak
+
+# Generated capability schemas and Python caches
+/crates/nullad-desktop/gen/schemas/
+**/__pycache__/
+
+/dist/

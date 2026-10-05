@@ -43,7 +43,10 @@ impl<S> PrefixedIo<S> {
     /// Consumes the wrapper, returning the inner stream and any unread prefix.
     #[must_use]
     pub fn into_parts(self) -> (Vec<u8>, S) {
-        (self.prefix[self.offset.min(self.prefix.len())..].to_vec(), self.inner)
+        (
+            self.prefix[self.offset.min(self.prefix.len())..].to_vec(),
+            self.inner,
+        )
     }
 }
 

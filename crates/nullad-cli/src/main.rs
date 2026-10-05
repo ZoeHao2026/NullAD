@@ -5,9 +5,7 @@
 //! `nullad-cli bench`, and the interception stack can be exercised end to end
 //! with `nullad-cli serve` without involving the desktop GUI at all.
 //!
-//! Argument parsing is hand-rolled rather than delegated to a CLI framework
-//! because this host's registry cache does not contain one, and the surface is
-//! small enough that a dependency would not pay for itself.
+//! The small command surface uses hand-written argument parsing.
 //!
 //! ## 中文说明
 //!
@@ -16,8 +14,7 @@
 //! 整套拦截链路也可以用 `nullad-cli serve` 端到端跑通，
 //! 完全不需要拉起桌面 GUI。
 //!
-//! 参数解析是手写的，没有交给 CLI 框架：本机的 registry 缓存里没有这类库，
-//! 而这个命令行接口足够小，引入依赖并不划算。
+//! 命令行入口较小，使用手写参数解析。
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -29,6 +26,7 @@ mod serve;
 mod tables;
 
 use lists::{ListSet, LoadReport};
+use nullad_intercept::{DetectionPolicy, EngineHandle, HeuristicMode, UpstreamProxy};
 
 /// Parsed command line.
 #[derive(Debug)]
@@ -40,6 +38,8 @@ enum Command {
         resource_type: String,
         lists: Vec<PathBuf>,
         verbose: bool,
+        policy: DetectionPolicy,
+        no_lists: bool,
     },
     /// Parse lists and report what was found without running anything.
     Load {
@@ -60,6 +60,9 @@ enum Command {
         dns_port: Option<u16>,
         dns_upstream: String,
         system_proxy: bool,
+        policy: DetectionPolicy,
+        no_lists: bool,
+        upstream: Option<UpstreamProxy>,
     },
     /// Print version and build information.
     Version,
@@ -102,13 +105,21 @@ fn main() -> ExitCode {
             resource_type,
             lists,
             verbose,
+            policy,
+            no_lists,
         } => {
-            let (engine, report) = load_engine(&lists);
+            let (engine, report) = load_engine(&lists, no_lists);
             report.print();
-            check::run(&engine, &url, page.as_deref(), &resource_type, verbose)
+            check::run(
+                &EngineHandle::new(std::sync::Arc::new(engine)).with_policy(policy),
+                &url,
+                page.as_deref(),
+                &resource_type,
+                verbose,
+            )
         }
         Command::Load { lists, show_rules } => {
-            let (engine, report) = load_engine(&lists);
+            let (engine, report) = load_engine(&lists, false);
             report.print();
             if show_rules > 0 {
                 tables::print_sample_rules(&report.sample_rules, show_rules);
@@ -122,8 +133,10 @@ fn main() -> ExitCode {
             synthetic_rules,
             json,
         } => {
-            let (engine, report) = load_engine(&lists);
-            report.print();
+            let (engine, report) = load_engine(&lists, false);
+            if !json {
+                report.print();
+            }
             bench::run(&engine, iterations, synthetic_rules, json)
         }
         Command::Serve {
@@ -132,15 +145,22 @@ fn main() -> ExitCode {
             dns_port,
             dns_upstream,
             system_proxy,
+            policy,
+            no_lists,
+            upstream,
         } => {
-            let (engine, report) = load_engine(&lists);
+            let (engine, report) = load_engine(&lists, no_lists);
             report.print();
             serve::run(
                 std::sync::Arc::new(engine),
-                proxy_port,
-                dns_port,
-                &dns_upstream,
-                system_proxy,
+                serve::ServeOptions {
+                    proxy_port,
+                    dns_port,
+                    dns_upstream,
+                    system_proxy,
+                    policy,
+                    upstream,
+                },
             )
         }
     };
@@ -158,8 +178,18 @@ fn main() -> ExitCode {
 ///
 /// The rule set is built first so that the report can include index-derived
 /// figures (trie nodes, automaton fragments) that only exist after indexing.
-fn load_engine(lists: &[PathBuf]) -> (nullad_engine::FilterEngine, LoadReport) {
-    let set = ListSet::load(lists);
+fn load_engine(lists: &[PathBuf], no_lists: bool) -> (nullad_engine::FilterEngine, LoadReport) {
+    let set = if no_lists {
+        ListSet::default()
+    } else {
+        ListSet::load(lists)
+    };
+    if no_lists {
+        return (
+            nullad_engine::FilterEngine::new(),
+            set.report(nullad_engine::RuleSetStats::default()),
+        );
+    }
     let started = std::time::Instant::now();
     let builder = set.build_builder();
 
@@ -211,10 +241,17 @@ OPTIONS:
     --dns-upstream <IP:PORT>
                         Upstream resolver (default 8.8.8.8:53)
     --system-proxy      Route the OS system proxy through NullAD while serving
+    --heuristic <MODE>  Offline detection: off, conservative, balanced (default)
+    --allow-host <HOST> Always allow a bare domain and its subdomains (repeatable)
+    --no-lists          Do not discover or load any filter lists (check/serve)
+    --upstream-proxy <URL>
+                        Chain serve through http://host:port or socks5://host:port
+                        No credentials; preserves an explicitly chosen proxy route
 
 EXAMPLES:
     nullad-cli load
-    nullad-cli check "https://ads.example.com/banner.gif"
+    nullad-cli check "http://ads.vendor.example/ad-loader.js" --no-lists --type script
+    nullad-cli check "http://ads.vendor.example/ad-loader.js" --no-lists --allow-host vendor.example
     nullad-cli bench --iterations 500000
     nullad-cli serve --port 8080 --dns-port 5353
 "#
@@ -239,6 +276,11 @@ fn parse_args(args: &[String]) -> Result<Option<Command>, String> {
     let mut dns_port: Option<u16> = None;
     let mut dns_upstream = "8.8.8.8:53".to_owned();
     let mut system_proxy = false;
+    let mut heuristic_mode = HeuristicMode::Balanced;
+    let mut allowed_hosts = Vec::new();
+    let mut no_lists = false;
+    let mut upstream = None;
+    let mut policy_option = false;
     let mut positional: Vec<String> = Vec::new();
 
     let mut index = 0usize;
@@ -271,7 +313,8 @@ fn parse_args(args: &[String]) -> Result<Option<Command>, String> {
             "--json" => json = true,
             "--show-rules" => {
                 index += 1;
-                show_rules = parse_number(expect_value(args, index, "--show-rules")?, "--show-rules")?;
+                show_rules =
+                    parse_number(expect_value(args, index, "--show-rules")?, "--show-rules")?;
             }
             "--port" | "-p" => {
                 index += 1;
@@ -289,6 +332,30 @@ fn parse_args(args: &[String]) -> Result<Option<Command>, String> {
                 dns_upstream = expect_value(args, index, "--dns-upstream")?.to_owned();
             }
             "--system-proxy" => system_proxy = true,
+            "--heuristic" => {
+                index += 1;
+                heuristic_mode = match expect_value(args, index, "--heuristic")? {
+                    "off" => HeuristicMode::Off,
+                    "conservative" => HeuristicMode::Conservative,
+                    "balanced" => HeuristicMode::Balanced,
+                    _ => return Err("--heuristic must be off, conservative or balanced".into()),
+                };
+                policy_option = true;
+            }
+            "--allow-host" => {
+                index += 1;
+                allowed_hosts.push(expect_value(args, index, "--allow-host")?.to_owned());
+                policy_option = true;
+            }
+            "--no-lists" => {
+                no_lists = true;
+                policy_option = true;
+            }
+            "--upstream-proxy" => {
+                index += 1;
+                upstream =
+                    Some(expect_value(args, index, "--upstream-proxy")?.parse::<UpstreamProxy>()?);
+            }
             "--help" | "-h" => return Ok(Some(Command::Help)),
             other if other.starts_with('-') => {
                 return Err(format!("unknown option `{other}`"));
@@ -302,6 +369,20 @@ fn parse_args(args: &[String]) -> Result<Option<Command>, String> {
         return Ok(None);
     };
 
+    if no_lists && !lists.is_empty() {
+        return Err("--no-lists cannot be combined with --list".into());
+    }
+    if policy_option && !matches!(command_name.as_str(), "check" | "serve") {
+        return Err("--heuristic, --allow-host and --no-lists require check or serve".into());
+    }
+    if upstream.is_some() && command_name != "serve" {
+        return Err("--upstream-proxy requires serve".into());
+    }
+    let policy = DetectionPolicy {
+        mode: heuristic_mode,
+        allowed_hosts: nullad_core::normalize_allowed_hosts(&allowed_hosts)
+            .map_err(|error| error.to_string())?,
+    };
     let command = match command_name.as_str() {
         "check" => {
             let url = positional
@@ -314,6 +395,8 @@ fn parse_args(args: &[String]) -> Result<Option<Command>, String> {
                 resource_type,
                 lists,
                 verbose,
+                policy,
+                no_lists,
             }
         }
         "load" => Command::Load { lists, show_rules },
@@ -329,6 +412,9 @@ fn parse_args(args: &[String]) -> Result<Option<Command>, String> {
             dns_port,
             dns_upstream,
             system_proxy,
+            policy,
+            no_lists,
+            upstream,
         },
         "version" => Command::Version,
         "help" => Command::Help,
@@ -350,4 +436,112 @@ fn parse_number<T: std::str::FromStr>(value: &str, option: &str) -> Result<T, St
     value
         .parse::<T>()
         .map_err(|_| format!("`{option}` expects a number, got `{value}`"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    #[test]
+    fn no_lists_check_uses_offline_policy_and_explicit_allow_hosts() {
+        let Some(Command::Check {
+            policy,
+            no_lists,
+            lists,
+            ..
+        }) = parse_args(&args(&[
+            "check",
+            "http://ads.vendor.example/ad-loader.js",
+            "--no-lists",
+            "--heuristic",
+            "conservative",
+            "--allow-host",
+            "VENDOR.example.",
+            "--allow-host",
+            "vendor.example",
+        ]))
+        .unwrap()
+        else {
+            panic!("check")
+        };
+        assert!(no_lists && lists.is_empty());
+        assert_eq!(policy.mode, HeuristicMode::Conservative);
+        assert_eq!(policy.allowed_hosts, ["vendor.example"]);
+        let (engine, report) = load_engine(&[], true);
+        assert_eq!(engine.rule_count(), 0);
+        assert!(report.sample_rules.is_empty());
+        let handle =
+            EngineHandle::new(std::sync::Arc::new(engine)).with_policy(DetectionPolicy::default());
+        assert!(
+            handle
+                .evaluate(
+                    "http://ads.vendor.example/ad-loader.js",
+                    nullad_engine::ResourceType::Script,
+                    None,
+                    nullad_intercept::DecisionSource::Proxy
+                )
+                .blocked
+        );
+        let handle = handle.with_policy(policy);
+        assert!(
+            !handle
+                .evaluate(
+                    "http://ads.vendor.example/ad-loader.js",
+                    nullad_engine::ResourceType::Script,
+                    None,
+                    nullad_intercept::DecisionSource::Proxy
+                )
+                .blocked
+        );
+    }
+
+    #[test]
+    fn serving_upstream_and_balanced_defaults_are_explicit() {
+        let Some(Command::Serve {
+            policy,
+            upstream,
+            no_lists,
+            ..
+        }) = parse_args(&args(&[
+            "serve",
+            "--no-lists",
+            "--upstream-proxy",
+            "socks5://127.0.0.1:7890",
+        ]))
+        .unwrap()
+        else {
+            panic!("serve")
+        };
+        assert_eq!(policy.mode, HeuristicMode::Balanced);
+        assert_eq!(upstream.unwrap().endpoint(), ("127.0.0.1", 7890));
+        assert!(no_lists);
+    }
+
+    #[test]
+    fn rejects_ambiguous_or_invalid_detection_options() {
+        for values in [
+            vec![
+                "check",
+                "http://example.com",
+                "--no-lists",
+                "--list",
+                "a.txt",
+            ],
+            vec!["serve", "--heuristic", "aggressive"],
+            vec!["serve", "--allow-host", "https://example.com"],
+            vec!["serve", "--upstream-proxy", "http://user:pass@127.0.0.1:80"],
+            vec!["bench", "--no-lists"],
+            vec![
+                "check",
+                "http://example.com",
+                "--upstream-proxy",
+                "http://127.0.0.1:80",
+            ],
+        ] {
+            assert!(parse_args(&args(&values)).is_err(), "{values:?}");
+        }
+    }
 }

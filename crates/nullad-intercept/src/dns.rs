@@ -21,15 +21,22 @@
 //! untouched rather than being mis-answered.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::sync::watch;
+use tokio::task::JoinSet;
 
-use crate::{DecisionSource, DnsOutcome, EngineHandle};
+use crate::lifecycle::{stop_children, stopped};
+use crate::{DnsOutcome, EngineHandle};
 
 /// Maximum size of a DNS message we will handle over TCP.
-const MAX_TCP_MESSAGE: usize = 4096;
+const MAX_TCP_MESSAGE: usize = u16::MAX as usize;
+/// Shared upper bound on in-flight UDP queries and TCP clients.
+const MAX_CONCURRENT_QUERIES: usize = 128;
+const CLIENT_TIMEOUT: Duration = Duration::from_secs(15);
 /// Default upstream resolver.
 pub const DEFAULT_UPSTREAM: &str = "8.8.8.8:53";
 /// TTL for sinkhole answers, in seconds.
@@ -202,6 +209,9 @@ fn parse_name(packet: &[u8], start: usize) -> Option<(String, usize)> {
 /// the request so the client accepts the answer as valid.
 #[must_use]
 pub fn build_sinkhole_response(packet: &[u8], question: &Question, config: &DnsConfig) -> Vec<u8> {
+    if packet.len() < 4 {
+        return build_servfail(packet);
+    }
     // Name compression is not used here: every name is written in full, which
     // keeps the encoder trivially correct at a few bytes of cost.
     let mut out = Vec::with_capacity(512);
@@ -276,7 +286,7 @@ fn encode_question(out: &mut Vec<u8>, question: &Question) {
 #[must_use]
 pub fn build_servfail(packet: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(12);
-    out.extend_from_slice(&packet[0..2]);
+    out.extend_from_slice(packet.get(..2).unwrap_or(&[0, 0]));
     // QR=1, RA=1, RCODE=2 (server failure).
     out.extend_from_slice(&(0x8000u16 | 0x0080 | 0x0002).to_be_bytes());
     out.extend_from_slice(&0u16.to_be_bytes());
@@ -291,102 +301,150 @@ pub fn build_servfail(packet: &[u8]) -> Vec<u8> {
 pub struct DnsServer {
     handle: EngineHandle,
     config: DnsConfig,
-    udp: Arc<UdpSocket>,
+    bindings: Mutex<Option<(UdpSocket, TcpListener)>>,
+    address: SocketAddr,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Transport {
+    Udp,
+    Tcp,
 }
 
 impl DnsServer {
-    /// Binds the UDP socket and prepares the TCP listener.
-    pub async fn bind(config: DnsConfig, handle: EngineHandle) -> std::io::Result<Self> {
-        let udp = UdpSocket::bind(config.listen).await?;
-        Ok(Self {
-            handle,
-            config,
-            udp: Arc::new(udp),
-        })
+    /// Binds both transports before reporting readiness, including for port 0.
+    pub async fn bind(mut config: DnsConfig, handle: EngineHandle) -> std::io::Result<Self> {
+        let mut attempts_left = if config.listen.port() == 0 { 128 } else { 1 };
+        loop {
+            // Windows may select a UDP ephemeral port unavailable to TCP.
+            // Select through TCP first, then verify its UDP companion while
+            // retaining the listener. Fixed ports must never silently change.
+            let tcp = TcpListener::bind(config.listen).await?;
+            let address = tcp.local_addr()?;
+            match UdpSocket::bind(address).await {
+                Ok(udp) => {
+                    config.listen = address;
+                    return Ok(Self {
+                        handle,
+                        config,
+                        bindings: Mutex::new(Some((udp, tcp))),
+                        address,
+                    });
+                }
+                Err(error)
+                    if attempts_left > 1
+                        && matches!(
+                            error.kind(),
+                            std::io::ErrorKind::AddrInUse | std::io::ErrorKind::PermissionDenied
+                        ) =>
+                {
+                    attempts_left -= 1;
+                    drop(tcp);
+                }
+                Err(error) => return Err(error),
+            }
+        }
     }
 
     /// The address actually bound.
     pub fn local_addr(&self) -> std::io::Result<SocketAddr> {
-        self.udp.local_addr()
+        Ok(self.address)
     }
 
-    /// Runs the UDP and TCP servers until cancelled.
-    ///
-    /// Takes `self: Arc<Self>` because the TCP accept loop spawns a task per
-    /// connection that needs its own handle to the server.
+    /// Compatibility entry point for callers without an explicit stop signal.
     pub async fn run(self: Arc<Self>) {
-        let tcp_listener = TcpListener::bind(self.config.listen).await;
-
-        let udp_task = {
-            let this = Arc::clone(&self);
-            tokio::spawn(async move { this.run_udp().await })
-        };
-
-        match tcp_listener {
-            Ok(listener) => {
-                let this = Arc::clone(&self);
-                let tcp_task = tokio::spawn(async move { this.run_tcp(listener).await });
-                let _ = tokio::join!(udp_task, tcp_task);
-            }
-            Err(err) => {
-                // TCP is optional for most clients; DNS over UDP is the primary
-                // path, so a failed TCP bind degrades rather than aborts.
-                tracing::warn!(error = %err, "dns tcp listener unavailable; serving udp only");
-                let _ = udp_task.await;
-            }
+        let (_keep_alive, stop) = watch::channel(false);
+        if let Err(err) = self.run_until(stop).await {
+            tracing::warn!(error = %err, "dns listener stopped");
         }
     }
 
-    /// Serves DNS over UDP.
-    async fn run_udp(&self) {
-        let mut buffer = vec![0u8; 4096];
+    /// Runs both transports with at most 128 supervised client tasks.
+    /// Shutdown cancels and joins all children before releasing both ports.
+    pub async fn run_until(
+        self: Arc<Self>,
+        mut stop: watch::Receiver<bool>,
+    ) -> std::io::Result<()> {
+        let (udp, tcp) = self
+            .bindings
+            .lock()
+            .map_err(|_| std::io::Error::other("dns listener lock poisoned"))?
+            .take()
+            .ok_or_else(|| std::io::Error::other("dns listener already running or stopped"))?;
+        let udp = Arc::new(udp);
+        let mut children = JoinSet::new();
+        let mut buffer = vec![0u8; MAX_TCP_MESSAGE];
         loop {
-            let (len, peer) = match self.udp.recv_from(&mut buffer).await {
-                Ok(pair) => pair,
-                Err(err) => {
-                    tracing::warn!(error = %err, "dns udp receive failed");
-                    tokio::time::sleep(Duration::from_millis(20)).await;
-                    continue;
+            tokio::select! {
+                biased;
+                _ = stopped(&mut stop) => break,
+                result = children.join_next(), if !children.is_empty() => {
+                    if let Some(Ok(Err(err))) = result {
+                        tracing::debug!(error = %err, "dns client ended");
+                    }
                 }
-            };
-
-            let packet = &buffer[..len];
-            let response = self.answer(packet).await;
-            if let Some(response) = response {
-                if let Err(err) = self.udp.send_to(&response, peer).await {
-                    tracing::debug!(error = %err, %peer, "dns udp send failed");
+                received = udp.recv_from(&mut buffer) => {
+                    match received {
+                        Ok((len, peer)) => {
+                            // A response cannot preserve an ID from fewer than two bytes.
+                            if len < 2 {
+                                continue;
+                            }
+                            if children.len() >= MAX_CONCURRENT_QUERIES {
+                                self.handle.stats.record_dns(DnsOutcome::Failed);
+                                let response = build_servfail(&buffer[..len]);
+                                let _ = udp.send_to(&response, peer).await;
+                                continue;
+                            }
+                            let packet = buffer[..len].to_vec();
+                            let this = Arc::clone(&self);
+                            let reply_socket = Arc::clone(&udp);
+                            children.spawn(async move {
+                                let response = this.answer(&packet, Transport::Udp).await;
+                                reply_socket.send_to(&response, peer).await?;
+                                Ok(())
+                            });
+                        }
+                        Err(err) => {
+                            tracing::warn!(error = %err, "dns udp receive failed");
+                            tokio::select! {
+                                _ = stopped(&mut stop) => break,
+                                _ = tokio::time::sleep(Duration::from_millis(20)) => {}
+                            }
+                        }
+                    }
+                }
+                accepted = tcp.accept(), if children.len() < MAX_CONCURRENT_QUERIES => {
+                    match accepted {
+                        Ok((stream, _peer)) => {
+                            let this = Arc::clone(&self);
+                            children.spawn(async move { this.handle_tcp(stream).await });
+                        }
+                        Err(err) => {
+                            tracing::warn!(error = %err, "dns tcp accept failed");
+                            tokio::select! {
+                                _ = stopped(&mut stop) => break,
+                                _ = tokio::time::sleep(Duration::from_millis(50)) => {}
+                            }
+                        }
+                    }
                 }
             }
         }
-    }
-
-    /// Serves DNS over TCP, which clients fall back to for large answers.
-    async fn run_tcp(self: &Arc<Self>, listener: TcpListener) {
-        loop {
-            let (stream, peer) = match listener.accept().await {
-                Ok(pair) => pair,
-                Err(err) => {
-                    tracing::warn!(error = %err, "dns tcp accept failed");
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                    continue;
-                }
-            };
-            let this = Arc::clone(self);
-            tokio::spawn(async move {
-                if let Err(err) = this.handle_tcp(stream).await {
-                    tracing::debug!(error = %err, %peer, "dns tcp connection ended");
-                }
-            });
-        }
+        stop_children(&mut children).await;
+        drop(tcp);
+        drop(udp);
+        Ok(())
     }
 
     /// Handles one TCP connection, which may carry several sequential queries.
     async fn handle_tcp(&self, mut stream: TcpStream) -> std::io::Result<()> {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
         loop {
             let mut length_prefix = [0u8; 2];
-            if stream.read_exact(&mut length_prefix).await.is_err() {
+            if tokio::time::timeout(CLIENT_TIMEOUT, stream.read_exact(&mut length_prefix))
+                .await
+                .map_or(true, |result| result.is_err())
+            {
                 return Ok(()); // Client closed.
             }
             let length = usize::from(u16::from_be_bytes(length_prefix));
@@ -395,74 +453,109 @@ impl DnsServer {
             }
 
             let mut packet = vec![0u8; length];
-            stream.read_exact(&mut packet).await?;
+            tokio::time::timeout(CLIENT_TIMEOUT, stream.read_exact(&mut packet))
+                .await
+                .map_err(|_| {
+                    std::io::Error::new(std::io::ErrorKind::TimedOut, "DNS client read timed out")
+                })??;
 
-            let Some(response) = self.answer(&packet).await else {
-                return Ok(());
-            };
+            let response = self.answer(&packet, Transport::Tcp).await;
 
             let len = u16::try_from(response.len()).unwrap_or(0);
-            stream.write_all(&len.to_be_bytes()).await?;
-            stream.write_all(&response).await?;
-            stream.flush().await?;
+            tokio::time::timeout(CLIENT_TIMEOUT, async {
+                stream.write_all(&len.to_be_bytes()).await?;
+                stream.write_all(&response).await?;
+                stream.flush().await
+            })
+            .await
+            .map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::TimedOut, "DNS client write timed out")
+            })??;
         }
     }
 
     /// Decides a single DNS packet and produces a response.
-    async fn answer(&self, packet: &[u8]) -> Option<Vec<u8>> {
-        let question = match parse_question(packet) {
-            Some(question) => question,
-            None => {
-                // Not something we can decide on; forward it untouched and let
-                // the upstream resolver answer or reject it.
-                return self.forward(packet).await;
+    async fn answer(&self, packet: &[u8], transport: Transport) -> Vec<u8> {
+        if let Some(question) = parse_question(packet) {
+            if self.handle.decide_host(&question.name) {
+                self.handle.stats.record_dns(DnsOutcome::Blocked);
+                return build_sinkhole_response(packet, &question, &self.config);
             }
-        };
-
-        let blocked = self.handle.decide_host(&question.name);
-
-        if blocked {
-            self.handle.stats.record_dns(DnsOutcome::Blocked);
-            self.handle.emit(crate::Decision {
-                timestamp_ms: crate::now_ms(),
-                url: format!("dns://{}/{}", question.name, question.qtype),
-                host: question.name.clone(),
-                blocked: true,
-                rule: None,
-                source: DecisionSource::Dns,
-            });
-            return Some(build_sinkhole_response(packet, &question, &self.config));
         }
 
-        match self.forward(packet).await {
-            Some(response) => {
+        match self.forward(packet, transport).await {
+            Ok(response) => {
                 self.handle.stats.record_dns(DnsOutcome::Forwarded);
-                Some(response)
+                response
             }
-            None => {
+            Err(err) => {
                 self.handle.stats.record_dns(DnsOutcome::Failed);
-                // Failing open with SERVFAIL keeps the client's resolver
-                // behaviour predictable and never turns a NullAD outage into an
-                // unexplained black hole.
-                Some(build_servfail(packet))
+                tracing::debug!(error = %err, "DNS upstream exchange failed");
+                build_servfail(packet)
             }
         }
     }
 
-    /// Sends a packet to the upstream resolver and returns its answer.
-    async fn forward(&self, packet: &[u8]) -> Option<Vec<u8>> {
-        let socket = UdpSocket::bind(("0.0.0.0", 0)).await.ok()?;
-        socket.connect(self.config.upstream).await.ok()?;
-        socket.send(packet).await.ok()?;
-
-        let mut buffer = vec![0u8; 4096];
-        let received = tokio::time::timeout(UPSTREAM_TIMEOUT, socket.recv(&mut buffer))
-            .await
-            .ok()?
-            .ok()?;
-        buffer.truncate(received);
-        Some(buffer)
+    /// One deadline covers UDP, and any TCP retry required by a truncated answer.
+    async fn forward(&self, packet: &[u8], transport: Transport) -> std::io::Result<Vec<u8>> {
+        tokio::time::timeout(UPSTREAM_TIMEOUT, async {
+            match transport {
+                Transport::Tcp => self.forward_tcp(packet).await,
+                Transport::Udp => {
+                    let response = self.forward_udp(packet).await?;
+                    if response[2] & 0x02 != 0 {
+                        self.forward_tcp(packet).await
+                    } else {
+                        Ok(response)
+                    }
+                }
+            }
+        })
+        .await
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "DNS upstream timed out"))?
     }
+
+    async fn forward_udp(&self, packet: &[u8]) -> std::io::Result<Vec<u8>> {
+        let local = if self.config.upstream.is_ipv6() {
+            "[::]:0"
+        } else {
+            "0.0.0.0:0"
+        };
+        let socket = UdpSocket::bind(local).await?;
+        socket.connect(self.config.upstream).await?;
+        socket.send(packet).await?;
+        let mut buffer = vec![0u8; MAX_TCP_MESSAGE];
+        let received = socket.recv(&mut buffer).await?;
+        buffer.truncate(received);
+        validate_response(packet, &buffer)?;
+        Ok(buffer)
+    }
+
+    async fn forward_tcp(&self, packet: &[u8]) -> std::io::Result<Vec<u8>> {
+        let mut stream = TcpStream::connect(self.config.upstream).await?;
+        let length = u16::try_from(packet.len()).map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "DNS query too large")
+        })?;
+        stream.write_all(&length.to_be_bytes()).await?;
+        stream.write_all(packet).await?;
+        let mut prefix = [0u8; 2];
+        stream.read_exact(&mut prefix).await?;
+        let length = usize::from(u16::from_be_bytes(prefix));
+        let mut response = vec![0u8; length];
+        stream.read_exact(&mut response).await?;
+        validate_response(packet, &response)?;
+        Ok(response)
+    }
+}
+
+fn validate_response(query: &[u8], response: &[u8]) -> std::io::Result<()> {
+    if response.len() < 12 || response.get(..2) != query.get(..2) || response[2] & 0x80 == 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "DNS upstream response has an invalid header or transaction ID",
+        ));
+    }
+    Ok(())
 }
 
 /// Parses an upstream address from text, with a helpful default.
@@ -595,7 +688,9 @@ mod tests {
         };
         let response = build_sinkhole_response(&query, &question, &config);
         assert_eq!(u16::from_be_bytes([response[6], response[7]]), 1);
-        assert!(response.windows(16).any(|w| w == config.sinkhole_v6.octets()));
+        assert!(response
+            .windows(16)
+            .any(|w| w == config.sinkhole_v6.octets()));
     }
 
     #[test]

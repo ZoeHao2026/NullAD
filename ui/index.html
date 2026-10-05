@@ -1,328 +1,58 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>NullAD</title>
-    <!-- Blocking, and before the stylesheet: the stored theme must reach <html>
-         before the first paint. The app's CSP refuses inline script, so this
-         cannot live here directly. -->
-    <script src="theme.js"></script>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <div class="app">
-      <aside class="sidebar">
-        <div class="brand">
-          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
-            <path
-              d="M16 2.5 27 5.6v11.9c0 6.9-4.6 11.6-11 14-6.4-2.4-11-7.1-11-14V5.6z"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.2"
-              stroke-linejoin="round"
-            />
-            <path
-              d="M11.4 11.4 20.6 20.6M20.6 11.4 11.4 20.6"
-              stroke="currentColor"
-              stroke-width="2.2"
-              stroke-linecap="round"
-            />
-          </svg>
-          <div class="brand-text">
-            <span class="brand-name">NullAD</span>
-            <span class="brand-sub">Ad &amp; tracker blocking</span>
-          </div>
-        </div>
-
-        <nav class="nav" id="nav">
-          <button class="nav-item is-active" data-view="dashboard" type="button">
-            <span class="nav-glyph">01</span><span class="nav-label">Dashboard</span>
-          </button>
-          <button class="nav-item" data-view="rules" type="button">
-            <span class="nav-glyph">02</span><span class="nav-label">Rules</span>
-          </button>
-          <button class="nav-item" data-view="settings" type="button">
-            <span class="nav-glyph">03</span><span class="nav-label">Settings</span>
-          </button>
-          <button class="nav-item" data-view="logs" type="button">
-            <span class="nav-glyph">04</span><span class="nav-label">Logs</span>
-          </button>
-        </nav>
-
-        <div class="sidebar-foot">
-          <div class="state-pill" id="state-pill">
-            <span class="dot" id="state-dot"></span>
-            <span id="state-label">Stopped</span>
-          </div>
-          <button class="btn btn-primary btn-block" id="toggle-protection" type="button">
-            Start protection
-          </button>
-          <div class="rule-count" id="rule-count">— rules</div>
-          <div class="theme-switch" id="theme-switch" role="group" aria-label="Colour theme">
-            <button class="theme-option is-active" id="theme-light" type="button" aria-pressed="true">
-              Light
-            </button>
-            <button class="theme-option" id="theme-dark" type="button" aria-pressed="false">
-              Dark
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      <main class="main">
-        <!-- Dashboard -->
-        <section class="view is-active" id="view-dashboard">
-          <header class="view-head">
-            <span class="view-index">01</span>
-            <h1>Dashboard</h1>
-            <p class="muted">Live filtering activity from every interceptor.</p>
-          </header>
-
-          <div class="cards">
-            <div class="card card-accent">
-              <div class="card-label">Requests seen</div>
-              <div class="card-value" id="stat-queries">0</div>
-              <div class="card-foot" id="stat-queries-foot">engine lookups</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Blocked</div>
-              <div class="card-value card-value-red" id="stat-blocked">0</div>
-              <div class="card-foot" id="stat-ratio">0.0% of traffic</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Allowed</div>
-              <div class="card-value" id="stat-allowed">0</div>
-              <div class="card-foot" id="stat-exceptions">0 by exception</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Rules loaded</div>
-              <div class="card-value" id="stat-rules">0</div>
-              <div class="card-foot" id="stat-lists">0 lists</div>
-            </div>
-          </div>
-
-          <div class="grid-2">
-            <div class="panel">
-              <h2>Interceptors</h2>
-              <table class="table" id="interceptor-table">
-                <tbody>
-                  <tr>
-                    <td>HTTP proxy</td>
-                    <td class="num" id="ic-proxy">0 / 0</td>
-                    <td class="muted sm">blocked / seen</td>
-                  </tr>
-                  <tr>
-                    <td>TLS SNI</td>
-                    <td class="num" id="ic-sni">0 / 0</td>
-                    <td class="muted sm">blocked / seen</td>
-                  </tr>
-                  <tr>
-                    <td>DNS sinkhole</td>
-                    <td class="num" id="ic-dns">0 / 0</td>
-                    <td class="muted sm">blocked / seen</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div class="panel">
-              <h2>Rule set</h2>
-              <table class="table">
-                <tbody>
-                  <tr><td>Domain anchors</td><td class="num" id="rs-domain">0</td></tr>
-                  <tr><td>Domain + path</td><td class="num" id="rs-domainpath">0</td></tr>
-                  <tr><td>Substring / wildcard</td><td class="num" id="rs-fragment">0</td></tr>
-                  <tr><td>Regex</td><td class="num" id="rs-regex">0</td></tr>
-                  <tr><td>Trie nodes</td><td class="num" id="rs-trie">0</td></tr>
-                  <tr><td>Automaton fragments</td><td class="num" id="rs-frag">0</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="panel">
-            <div class="panel-head">
-              <h2>Live requests</h2>
-              <button class="btn btn-ghost btn-sm" id="clear-log">Clear</button>
-            </div>
-            <div class="feed" id="feed">
-              <div class="empty">No requests yet. Start protection to see activity.</div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Rules -->
-        <section class="view" id="view-rules">
-          <header class="view-head">
-            <span class="view-index">02</span>
-            <h1>Rules</h1>
-            <p class="muted">Filter lists and custom rules.</p>
-          </header>
-
-          <div class="panel">
-            <div class="panel-head">
-              <h2>Filter lists</h2>
-              <button class="btn btn-ghost btn-sm" id="reload-lists">Reload</button>
-            </div>
-            <table class="table table-full">
-              <thead>
-                <tr>
-                  <th>On</th>
-                  <th>Name</th>
-                  <th>Source</th>
-                  <th class="num">Rules</th>
-                  <th class="num">Failed</th>
-                  <th class="num">Cosmetic</th>
-                </tr>
-              </thead>
-              <tbody id="lists-body">
-                <tr><td colspan="6" class="empty">Loading…</td></tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="panel">
-            <div class="panel-head">
-              <h2>Custom rules</h2>
-              <button class="btn btn-ghost btn-sm" id="save-custom">Apply</button>
-            </div>
-            <p class="muted sm">
-              One rule per line, in Adblock Plus syntax. These are parsed exactly
-              like a filter list.
-            </p>
-            <textarea id="custom-rules" class="textarea" spellcheck="false"
-              placeholder="||ads.example.com^&#10;@@||ads.example.com/needed.js$script&#10;/banner.gif"></textarea>
-            <div class="hint" id="custom-status"></div>
-          </div>
-
-          <div class="panel">
-            <h2>Check a URL</h2>
-            <div class="row">
-              <input id="check-url" class="input" placeholder="https://ads.example.com/banner.gif" />
-              <input id="check-page" class="input input-sm" placeholder="page (optional)" />
-              <select id="check-type" class="input input-sm">
-                <option value="other">other</option>
-                <option value="document">document</option>
-                <option value="script">script</option>
-                <option value="image">image</option>
-                <option value="stylesheet">stylesheet</option>
-                <option value="xhr">xhr</option>
-                <option value="subdocument">subdocument</option>
-                <option value="font">font</option>
-                <option value="media">media</option>
-              </select>
-              <button class="btn btn-primary" id="do-check">Check</button>
-            </div>
-            <div class="check-result" id="check-result"></div>
-          </div>
-
-          <div class="panel">
-            <div class="panel-head">
-              <h2>Parsed rules</h2>
-              <span class="muted sm" id="rule-viewer-note"></span>
-            </div>
-            <div class="feed feed-tall" id="rule-viewer"></div>
-          </div>
-        </section>
-
-        <!-- Settings -->
-        <section class="view" id="view-settings">
-          <header class="view-head">
-            <span class="view-index">03</span>
-            <h1>Settings</h1>
-            <p class="muted">Listeners, system integration, and diagnostics.</p>
-          </header>
-
-          <div class="panel">
-            <h2>Listeners</h2>
-            <div class="field">
-              <label for="set-proxy-enabled">HTTP proxy</label>
-              <div class="row">
-                <input type="checkbox" id="set-proxy-enabled" />
-                <input id="set-proxy-port" class="input input-xs" />
-                <span class="muted sm">needs no administrator rights</span>
-              </div>
-            </div>
-            <div class="field">
-              <label for="set-dns-enabled">DNS sinkhole</label>
-              <div class="row">
-                <input type="checkbox" id="set-dns-enabled" />
-                <input id="set-dns-port" class="input input-xs" />
-                <input id="set-dns-upstream" class="input input-sm" placeholder="8.8.8.8:53" />
-                <label class="inline"><input type="checkbox" id="set-dns-nxdomain" /> NXDOMAIN</label>
-              </div>
-              <div class="hint" id="dns-hint"></div>
-            </div>
-          </div>
-
-          <div class="panel">
-            <h2>System integration</h2>
-            <label class="inline-block">
-              <input type="checkbox" id="set-system-proxy" />
-              Route the operating system's proxy through NullAD while running
-            </label>
-            <p class="muted sm">
-              Every change is journaled before it is applied, so it can always be
-              undone — including after a crash.
-            </p>
-            <div class="hint" id="pending-changes"></div>
-            <button class="btn btn-ghost btn-sm" id="restore-system">Restore system settings</button>
-          </div>
-
-          <div class="panel">
-            <h2>Performance</h2>
-            <p class="muted sm">
-              Measures the real matching cost on this machine against the rules
-              currently loaded.
-            </p>
-            <button class="btn btn-ghost btn-sm" id="run-bench">Run benchmark</button>
-            <div class="hint" id="bench-result"></div>
-          </div>
-
-          <div class="panel">
-            <h2>About</h2>
-            <table class="table" id="about-table">
-              <tbody>
-                <tr><td>Platform</td><td class="num" id="ab-platform">—</td></tr>
-                <tr><td>Administrator</td><td class="num" id="ab-elevated">—</td></tr>
-                <tr><td>Rules loaded</td><td class="num" id="ab-rules">—</td></tr>
-                <tr><td>Data directory</td><td class="num ab-path" id="ab-data">—</td></tr>
-                <tr><td>Config directory</td><td class="num ab-path" id="ab-config">—</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- Logs -->
-        <section class="view" id="view-logs">
-          <header class="view-head">
-            <span class="view-index">04</span>
-            <h1>Logs</h1>
-            <p class="muted">Every decision, newest first.</p>
-          </header>
-
-          <div class="panel">
-            <div class="panel-head">
-              <h2>Decisions</h2>
-              <div class="row">
-                <select id="log-filter" class="input input-sm">
-                  <option value="all">All</option>
-                  <option value="blocked">Blocked only</option>
-                  <option value="allowed">Allowed only</option>
-                </select>
-                <button class="btn btn-ghost btn-sm" id="log-clear">Clear</button>
-              </div>
-            </div>
-            <div class="feed feed-tall" id="log-feed">
-              <div class="empty">Nothing logged yet.</div>
-            </div>
-          </div>
-        </section>
-      </main>
-    </div>
-
-    <div class="toasts" id="toasts"></div>
-    <script src="app.js"></script>
-  </body>
-</html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>NullAD</title><link rel="icon" href="icons/house.svg"><script src="theme.js"></script><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="app">
+<aside class="sidebar"><div class="brand">NullAD</div><nav id="nav" aria-label="主导航" data-i18n-aria="navigation">
+<button class="nav-item is-active" data-view="dashboard" aria-current="page"><img src="icons/house.svg" alt=""><span data-i18n="overview">概览</span></button>
+<button class="nav-item" data-view="rules"><img src="icons/list-ul.svg" alt=""><span data-i18n="rules">规则</span></button>
+<button class="nav-item" data-view="settings"><img src="icons/gear.svg" alt=""><span data-i18n="settings">设置</span></button>
+<button class="nav-item" data-view="logs"><img src="icons/file-text.svg" alt=""><span data-i18n="logs">日志</span></button></nav>
+<div class="sidebar-foot"><label class="preference"><img src="icons/globe2.svg" alt=""><select id="language-select" aria-label="语言" data-i18n-aria="language"><option value="zh-CN">简体中文</option><option value="en">English</option></select></label><label class="preference"><img src="icons/sun.svg" alt=""><select id="theme-select" aria-label="主题" data-i18n-aria="theme"><option value="light" data-i18n="light">浅色</option><option value="dark" data-i18n="dark">深色</option></select></label></div>
+</aside>
+<main id="main" class="main">
+<div id="connection-notice" class="notice warning" role="status" hidden></div>
+<section id="view-dashboard" class="view is-active" aria-labelledby="overview-title">
+<header class="view-head"><h1 id="overview-title" data-i18n="overview">概览</h1><p data-i18n="overviewSubtitle">查看防护状态与最近的拦截记录。</p></header>
+<div class="protection-card panel">
+<div class="protection-heading"><div class="protection-summary"><span id="state-dot" class="status-dot"></span><div><h2 id="state-label" data-i18n="connecting">正在连接后端</h2><p id="state-description" data-i18n="waitingStatus">等待防护状态。</p></div></div><button id="toggle-protection" class="btn btn-primary" data-backend disabled data-i18n="startProtection">启动防护</button></div>
+<div id="status-error" class="notice danger inset" role="status" hidden></div><div id="restart-notice" class="notice warning inset" hidden data-i18n="restartRequired">设置已保存，重新启动防护后生效。</div>
+<div class="listener-summary"><div><span class="muted" data-i18n="httpProxy">HTTP 代理</span><strong id="proxy-address">—</strong></div><div><span class="muted" data-i18n="systemProxy">系统代理</span><strong id="system-proxy-state">—</strong><p id="dns-state">—</p></div></div>
+<div class="metrics"><div><span data-i18n="loadedRules">已载入规则</span><strong id="stat-rules">—</strong></div><div><span data-i18n="processedRequests">已处理请求</span><strong id="stat-queries">—</strong></div><div><span data-i18n="blockedRequests">已拦截请求</span><strong id="stat-blocked">—</strong></div><div><span data-i18n="blockRatio">拦截比例</span><strong id="stat-ratio">—</strong></div></div>
+</div>
+<div class="section-heading"><div><h2 data-i18n="recentRequests">最近请求</h2><p data-i18n="recentLimit">最近 500 条记录。</p></div><button class="text-button" data-go="logs" data-i18n="viewAll">查看全部</button></div>
+<div class="table-wrap request-table"><table><thead><tr><th data-i18n="time">时间</th><th data-i18n="domainUrl">域名 / URL</th><th data-i18n="decision">决策</th><th data-i18n="decisionReason">决策理由</th></tr></thead><tbody id="feed"></tbody></table></div>
+<footer class="overview-footer"><span id="enabled-lists" class="muted">—</span><button class="btn" data-go="rules" data-i18n="manageRules">管理规则</button></footer>
+</section>
+<section id="view-rules" class="view" hidden aria-labelledby="rules-title">
+<header class="view-head"><h1 id="rules-title" data-i18n="rules">规则</h1><p data-i18n="rulesSubtitle">管理规则列表，并检查规则命中情况。</p></header>
+<div class="panel rules-list-panel"><div class="panel-head"><h2 data-i18n="filterLists">规则列表</h2><button id="reload-lists" class="btn" data-backend disabled><img src="icons/arrow-clockwise.svg" alt=""><span data-i18n="reload">重新载入</span></button></div><div class="table-wrap"><table class="lists-table"><thead><tr><th data-i18n="enabled">启用</th><th data-i18n="name">名称</th><th data-i18n="source">来源</th><th class="num" data-i18n="ruleCount">规则数</th><th class="num" data-i18n="quarantined">隔离</th><th class="num" data-i18n="cosmetic" data-i18n-title="cosmeticHint">装饰规则</th></tr></thead><tbody id="lists-body"><tr><td colspan="6" class="empty-cell" data-i18n="waitingBackend">等待后端连接。</td></tr></tbody></table></div></div>
+<div class="panel"><h2 data-i18n="customRules">自定义规则</h2><label class="sr-only" for="custom-rules" data-i18n="customRules">自定义规则</label><textarea id="custom-rules" rows="3" spellcheck="false" data-i18n-placeholder="customPlaceholder" placeholder="! 在此添加自定义规则&#10;||ads.example.com^" data-backend disabled></textarea><div class="panel-actions"><p class="muted" data-i18n="customHint">支持 ABP 与 hosts 语法。</p><button id="save-custom" class="btn btn-primary" data-backend disabled data-i18n="applyRules">应用规则</button></div><p id="custom-status" class="hint" role="status"></p></div>
+<div class="panel"><h2 data-i18n="urlCheck">URL 检查</h2><form id="check-form" class="check-form"><label><span data-i18n="requestUrl">检查的 URL</span><input id="check-url" type="url" required placeholder="https://example.com/resource" data-backend disabled></label><label><span data-i18n="pageUrl">页面地址（可选）</span><input id="check-page" type="url" placeholder="https://example.com/" data-backend disabled></label><label><span data-i18n="resourceType">资源类型</span><select id="check-type" data-backend disabled><option value="other">other</option><option value="all">all</option><option value="document">document</option><option value="script">script</option><option value="image">image</option><option value="stylesheet">stylesheet</option><option value="object">object</option><option value="xhr">xhr</option><option value="subdocument">subdocument</option><option value="font">font</option><option value="media">media</option><option value="websocket">websocket</option><option value="ping">ping</option></select></label><button id="do-check" class="btn" data-backend disabled data-i18n="check">检查</button></form><div id="check-result" class="check-result" role="status"><img src="icons/file-text.svg" alt=""><span data-i18n="checkEmpty">输入 URL 查看拦截结果与命中规则。</span></div></div>
+<details id="parsed-rules" class="panel disclosure"><summary><span data-i18n="parsedRules">已解析规则</span><span id="rule-viewer-note" class="muted small"></span></summary><p class="muted" data-i18n="parsedHint">查看当前生效的规则，最多显示 120 条。</p><div id="rule-viewer" class="rule-viewer"></div></details>
+</section>
+<section id="view-settings" class="view" hidden aria-labelledby="settings-title">
+<header class="view-head"><h1 id="settings-title" data-i18n="settings">设置</h1><p data-i18n="settingsSubtitle">管理监听服务与系统集成。</p></header>
+<form id="settings-form">
+<div class="panel listener-panel"><h2 data-i18n="listeners">监听服务</h2><p class="muted" data-i18n="listenersSubtitle">配置本机的监听服务。</p>
+<div class="listener-row"><div class="field-description"><h3 data-i18n="httpProxy">HTTP 代理</h3><p data-i18n="proxyHint">用于拦截 HTTP 请求。</p></div><label class="switch-label"><input id="set-proxy-enabled" type="checkbox" class="switch" data-backend disabled><span data-i18n="enabled">启用</span></label><label class="port-field"><span data-i18n="listenPort">监听端口</span><input id="set-proxy-port" type="number" min="1" max="65535" required data-backend disabled></label><p class="muted row-hint" data-i18n="loopbackOnly">仅监听本机地址。</p></div>
+<div class="listener-row dns-row"><div class="field-description"><h3>DNS</h3><p data-i18n="dnsHint">用于拦截 DNS 请求。</p></div><label class="switch-label"><input id="set-dns-enabled" type="checkbox" class="switch" data-backend disabled><span data-i18n="enabled">启用</span></label><label class="port-field"><span data-i18n="listenPort">监听端口</span><input id="set-dns-port" type="number" min="1" max="65535" required data-backend disabled></label><label class="upstream-field"><span data-i18n="upstreamDns">上游 DNS 服务器</span><input id="set-dns-upstream" placeholder="8.8.8.8:53" required data-backend disabled></label><label class="nxdomain-field"><input id="set-dns-nxdomain" type="checkbox" data-backend disabled><span data-i18n="nxdomain">被拦截域名返回 NXDOMAIN</span></label></div>
+<div class="detection-fields"><h2 data-i18n="offlineDetection">离线广告检测</h2><p class="muted" data-i18n="offlineDetectionHint">无需订阅列表。规则列表继续参与过滤；启发式检测可能误拦，请按需添加允许域名。</p>
+<label for="set-heuristic-mode"><span data-i18n="heuristicMode">启发式模式</span><select id="set-heuristic-mode" data-backend disabled><option value="off" data-i18n="heuristicOff">关闭</option><option value="conservative" data-i18n="heuristicConservative">保守</option><option value="balanced" data-i18n="heuristicBalanced">平衡（默认）</option></select></label>
+<p class="hint" data-i18n="heuristicModeHint">保守模式要求更强广告特征；平衡模式组合 URL、资源和来源特征。分数是特征强度，不是概率。</p>
+<label for="set-allowed-hosts"><span data-i18n="allowedHosts">允许域名</span><textarea id="set-allowed-hosts" rows="3" placeholder="example.com" data-backend disabled aria-describedby="allowed-hosts-hint"></textarea></label><p id="allowed-hosts-hint" class="hint" data-i18n="allowedHostsHint">每行一个裸域名或 IP，不含协议、路径或端口。域名包含其子域名；IP 仅匹配自身，优先于规则和启发式。</p>
+<label for="set-upstream-proxy"><span data-i18n="proxyUpstream">上游代理（可选）</span><input id="set-upstream-proxy" placeholder="http://127.0.0.1:7890" data-backend disabled aria-describedby="proxy-upstream-hint"></label><p id="proxy-upstream-hint" class="hint" data-i18n="proxyUpstreamHint">支持 http://host:port 和 socks5://host:port，不支持账号密码。已有系统代理需填写上游方可接管；PAC 请使用独立扩展。留空直连，保存后重启防护。</p></div>
+<div class="settings-actions"><p id="settings-change-note" class="notice warning" data-i18n="settingsRestartHint">修改监听设置后，需要重新启动防护才能生效。</p><button id="cancel-settings" type="button" class="btn" disabled data-i18n="cancelChanges">取消修改</button><button id="save-settings" class="btn btn-primary" disabled data-i18n="saveSettings">保存设置</button></div><p id="settings-status" class="hint" role="status"></p></div>
+<div class="panel"><h2 data-i18n="systemIntegration">系统集成</h2><p class="muted" data-i18n="systemIntegrationSubtitle">管理与操作系统的集成。</p><div class="integration-row"><div class="field-description"><h3 data-i18n="takeOverProxy">接管系统代理</h3><p data-i18n="takeOverHint">将系统代理设置为指向 NullAD。</p></div><label class="switch-label"><input id="set-system-proxy" type="checkbox" class="switch" data-backend disabled><span data-i18n="enabled">启用</span></label><p class="muted" data-i18n="integrationHint">启动防护后，将系统代理指向 NullAD；停止时恢复原设置。</p></div><div class="recovery-bar"><span id="pending-changes" data-i18n="waitingStatus">等待防护状态。</span><button id="restore-system" type="button" class="btn" disabled data-i18n="restoreSettings">恢复系统设置</button></div><div id="restore-result" class="hint" role="status"></div></div>
+</form>
+<div class="panel extension-panel"><h2 data-i18n="httpsExtension">HTTPS 浏览器扩展</h2><p class="muted" data-i18n="httpsExtensionHint">完整 HTTPS 资源 URL 与页面元素过滤由浏览器扩展执行，无需安装根证书。扩展需单独安装并设置。</p><ol><li data-i18n="extensionInstallOne">解压 NullAD 扩展 ZIP，保留包含 manifest.json 的目录。</li><li><span data-i18n="extensionInstallTwo">在 Chrome / Edge 扩展页开启开发者模式，选择“加载已解压的扩展程序”，选中该目录。</span> <code>chrome://extensions</code> / <code>edge://extensions</code></li><li data-i18n="extensionInstallThree">打开扩展设置，选择启发式模式和允许域名；扩展设置独立于桌面。</li></ol><p class="notice" data-i18n="proxyCompatibility">扩展与已有 HTTP / SOCKS / TUN / VPN 代理路径独立；NullAD 网络代理使用显式上游链，不自动接管这些代理。</p></div>
+<div class="panel diagnostic-panel"><h2 data-i18n="diagnostics">诊断</h2><p class="muted" data-i18n="diagnosticsSubtitle">运行性能测试以检查当前配置的效果。</p><div class="diagnostic-summary"><button id="run-bench" class="btn" data-backend disabled data-i18n="runBenchmark">运行性能测试</button><span id="bench-result" class="muted" role="status" data-i18n="benchNotRun">未运行性能测试</span><span id="platform-summary" class="muted">—</span></div><div class="path-row"><label for="ab-data" data-i18n="dataDirectory">数据目录</label><input id="ab-data" readonly value="—"><button class="icon-button" type="button" data-copy="ab-data" aria-label="复制数据目录" data-i18n-aria="copyData"><img src="icons/copy.svg" alt=""></button></div><div class="path-row"><label for="ab-config" data-i18n="configDirectory">配置目录</label><input id="ab-config" readonly value="—"><button class="icon-button" type="button" data-copy="ab-config" aria-label="复制配置目录" data-i18n-aria="copyConfig"><img src="icons/copy.svg" alt=""></button></div><details class="technical-details"><summary data-i18n="advancedDiagnostics">详细诊断</summary><div class="diagnostic-grid"><div><h3 data-i18n="interceptors">拦截器</h3><dl><dt>HTTP</dt><dd id="ic-proxy">—</dd><dt>TLS SNI</dt><dd id="ic-sni">—</dd><dt>DNS</dt><dd id="ic-dns">—</dd><dt data-i18n="dnsFailures">DNS 失败</dt><dd id="ic-dns-failed">—</dd></dl><p class="hint" data-i18n="blockedSeen">拦截 / 处理</p></div><div><h3 data-i18n="ruleSet">规则集</h3><dl><dt data-i18n="domainAnchors">域名锚点</dt><dd id="rs-domain">—</dd><dt data-i18n="domainPath">域名与路径</dt><dd id="rs-domainpath">—</dd><dt data-i18n="fragments">子串与通配</dt><dd id="rs-fragment">—</dd><dt data-i18n="regexRules">正则</dt><dd id="rs-regex">—</dd><dt data-i18n="trieNodes">前缀树节点</dt><dd id="rs-trie">—</dd><dt data-i18n="automatonFragments">自动机片段</dt><dd id="rs-frag">—</dd></dl></div><div><h3 data-i18n="engine">引擎</h3><dl><dt data-i18n="allowed">已放行</dt><dd id="stat-allowed">—</dd><dt data-i18n="exceptions">命中例外</dt><dd id="stat-exceptions">—</dd><dt data-i18n="administrator">管理员权限</dt><dd id="ab-elevated">—</dd></dl></div></div><p class="hint" data-i18n="filterLimitations">HTTPS 按主机名过滤；不解密 TLS，也不执行元素隐藏。加密 ClientHello 可能使 SNI 过滤失效。</p></details></div>
+</section>
+<section id="view-logs" class="view" hidden aria-labelledby="logs-title">
+<header class="view-head"><h1 id="logs-title" data-i18n="logs">日志</h1><p data-i18n="logsSubtitle">查看最近的请求与规则匹配结果。</p></header>
+<div class="panel log-toolbar"><span data-i18n="show">显示</span><div class="segmented" id="log-filter" role="group" aria-label="日志筛选" data-i18n-aria="logFilter"><button type="button" data-filter="all" class="is-active" aria-pressed="true" data-i18n="all">全部</button><button type="button" data-filter="blocked" aria-pressed="false" data-i18n="blocked">已拦截</button><button type="button" data-filter="allowed" aria-pressed="false" data-i18n="allowed">已放行</button></div><span class="muted recent-note" data-i18n="recentLimit">最近 500 条记录。</span><button id="log-clear" class="btn" data-backend disabled data-i18n="clearLogs">清空日志</button></div>
+<div class="table-wrap logs-table"><table><thead><tr><th data-i18n="time">时间</th><th data-i18n="domain">域名</th><th>URL</th><th data-i18n="decision">决策</th><th data-i18n="decisionReason">决策理由</th></tr></thead><tbody id="log-feed"></tbody></table><div class="log-table-footer"><span id="log-count">—</span><span class="muted" data-i18n="autoRefresh">列表自动刷新。</span></div></div><p class="log-retention muted" data-i18n="logRetention">日志仅保留在本次运行内，较早的记录会自动移除。</p>
+</section>
+</main></div><div id="toasts" class="toasts" aria-live="polite" aria-atomic="false"></div>
+<script src="i18n.js"></script><script src="ipc.js"></script><script src="state.js"></script><script src="views.js"></script><script src="app.js"></script>
+</body></html>

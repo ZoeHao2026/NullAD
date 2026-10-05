@@ -12,138 +12,164 @@
 //!   than a configured floor, which is the guard against serving a captive
 //!   portal's error page as a filter list.
 
-use std::collections::HashSet;
-
-use nullad_engine::{RuleSet, RuleSetBuilder};
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::settings::{AppSettings, ListSource};
 use crate::state::ListSummary;
+use nullad_engine::{ParseStats, Rule, RuleSet, RuleSetBuilder};
 
-/// A remote list smaller than this fraction of its previous size is rejected.
 const SHRINK_FLOOR: f64 = 0.5;
 
-/// The result of a load attempt.
 #[derive(Debug, Clone)]
 pub struct LoadOutcome {
-    /// The compiled rule set, when at least one rule survived.
-    ///
-    /// Held behind an `Arc` so the outcome can be cloned cheaply and the same
-    /// compiled set can be installed into the engine without rebuilding it.
-    pub rule_set: Option<std::sync::Arc<RuleSet>>,
-    /// Per-list summaries for the UI.
+    pub rule_set: Option<Arc<RuleSet>>,
     pub summaries: Vec<ListSummary>,
-    /// Problems that did not prevent loading.
     pub warnings: Vec<String>,
-    /// Total rules indexed.
     pub total_rules: usize,
-    /// Total rules quarantined.
     pub total_failures: usize,
-    /// Wall-clock duration in milliseconds.
     pub elapsed_ms: f64,
 }
 
 impl LoadOutcome {
-    /// Returns `true` when every configured list failed to load.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.total_rules == 0
     }
 }
 
-/// Loads filter lists into a compiled rule set.
+#[derive(Debug, Clone)]
+struct CachedList {
+    bytes: usize,
+    rules: Vec<Rule>,
+    stats: ParseStats,
+}
+
+/// Retains the last valid parse per list identity and source.
 #[derive(Debug, Default)]
 pub struct ListLoader {
-    /// Sizes of previously loaded remote lists, keyed by URL.
-    previous_sizes: std::sync::Mutex<std::collections::HashMap<String, usize>>,
+    cache: Mutex<HashMap<(u32, ListSource), CachedList>>,
+    client: OnceLock<Result<reqwest::blocking::Client, String>>,
+    resource_dir: Option<PathBuf>,
+    load_lock: Mutex<()>,
 }
 
 impl ListLoader {
-    /// Creates an empty loader.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Loads every enabled list and compiles a rule set.
+    #[must_use]
+    pub fn with_resource_dir(resource_dir: Option<PathBuf>) -> Self {
+        Self {
+            resource_dir,
+            ..Self::default()
+        }
+    }
+
     #[must_use]
     pub fn load(&self, settings: &AppSettings) -> LoadOutcome {
+        let _load = self
+            .load_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let started = std::time::Instant::now();
         let mut builder = RuleSetBuilder::new();
         let mut summaries = Vec::new();
         let mut warnings = Vec::new();
         let mut seen_ids = HashSet::new();
+        let mut cache = self
+            .cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         for entry in settings.enabled_lists() {
             if !seen_ids.insert(entry.id) {
                 warnings.push(format!("duplicate list id {} ignored", entry.id));
                 continue;
             }
-
-            let text = match self.read_source(&entry.source) {
-                Ok(text) => text,
-                Err(err) => {
-                    warnings.push(format!("{}: {err}", entry.name));
-                    summaries.push(ListSummary {
-                        id: entry.id,
-                        name: entry.name.clone(),
-                        source: entry.source.describe(),
-                        enabled: true,
-                        rules: 0,
-                        failures: 0,
-                        cosmetic: 0,
-                    });
-                    continue;
+            let key = (entry.id, entry.source.clone());
+            let candidate = self.read_source(&entry.source).and_then(|text| {
+                if matches!(entry.source, ListSource::Remote { .. }) {
+                    if let Some(previous) = cache.get(&key) {
+                        if text.len() < (previous.bytes as f64 * SHRINK_FLOOR) as usize {
+                            return Err(format!("download shrank from {} to {} bytes; retaining the previous valid list", previous.bytes, text.len()));
+                        }
+                    }
+                }
+                if matches!(entry.source, ListSource::Remote { .. }) {
+                    let prefix = text.trim_start().chars().take(32).collect::<String>().to_ascii_lowercase();
+                    if prefix.starts_with("<!doctype html") || prefix.starts_with("<html") {
+                        return Err("download returned an HTML page instead of filter rules".into());
+                    }
+                }
+                // Parse once with the actual configured identity.
+                let (rules, stats) = nullad_engine::RuleParser::new().list_id(entry.id).parse_list(&text);
+                if rules.is_empty() { return Err(format!("parsed zero rules from {} bytes", text.len())); }
+                Ok(CachedList { bytes: text.len(), rules, stats })
+            });
+            let selected = match candidate {
+                Ok(valid) => {
+                    cache.insert(key.clone(), valid.clone());
+                    Some(valid)
+                }
+                Err(error) => {
+                    warnings.push(format!("{}: {error}", entry.name));
+                    let previous = cache.get(&key).cloned();
+                    if previous.is_some() {
+                        warnings.push(format!(
+                            "{}: using the last valid rules for this source",
+                            entry.name
+                        ));
+                    }
+                    previous
                 }
             };
-
-            let parser = nullad_engine::RuleParser::new();
-            let (_, stats) = parser.parse_list(&text);
-
-            // A list that parses to nothing is almost always a failed download
-            // or a wrong path. Accepting it silently would look exactly like a
-            // working configuration while blocking nothing.
-            if stats.accepted == 0 {
-                warnings.push(format!(
-                    "{}: parsed zero rules from {} bytes; the file or download is \
-                     probably empty or not a filter list",
-                    entry.name,
-                    text.len()
-                ));
+            if let Some(valid) = selected {
+                summaries.push(ListSummary {
+                    id: entry.id,
+                    name: entry.name.clone(),
+                    source: entry.source.describe(),
+                    enabled: true,
+                    rules: valid.stats.accepted,
+                    failures: valid.stats.failed(),
+                    cosmetic: valid.stats.cosmetic,
+                });
+                builder.add_rules(valid.rules);
+            } else {
                 summaries.push(ListSummary {
                     id: entry.id,
                     name: entry.name.clone(),
                     source: entry.source.describe(),
                     enabled: true,
                     rules: 0,
-                    failures: stats.failed(),
-                    cosmetic: stats.cosmetic,
+                    failures: 0,
+                    cosmetic: 0,
                 });
-                continue;
             }
-
-            let added = builder.add_list(&text, entry.id);
-            summaries.push(ListSummary {
-                id: entry.id,
-                name: entry.name.clone(),
-                source: entry.source.describe(),
-                enabled: true,
-                rules: added.accepted,
-                failures: added.failed(),
-                cosmetic: added.cosmetic,
-            });
         }
-
-        let total_rules: usize = summaries.iter().map(|s| s.rules).sum();
-        let total_failures: usize = summaries.iter().map(|s| s.failures).sum();
-
-        let rule_set = match builder.build() {
-            Ok(rule_set) => Some(std::sync::Arc::new(rule_set)),
-            Err(err) => {
-                warnings.push(format!("could not compile a rule set: {err}"));
-                None
+        let total_rules = summaries.iter().map(|summary| summary.rules).sum();
+        let total_failures = summaries.iter().map(|summary| summary.failures).sum();
+        let rule_set = if builder.is_empty() {
+            // Never resurrect removed or disabled rules from an old aggregate.
+            // Cached valid rules were already selected separately per source.
+            if settings.enabled_lists().next().is_some() {
+                warnings.push(
+                    "could not compile any valid enabled list; no rules were installed".into(),
+                );
+            }
+            Some(nullad_engine::FilterEngine::new().rule_set())
+        } else {
+            match builder.build() {
+                Ok(rules) => Some(Arc::new(rules)),
+                Err(error) => {
+                    warnings.push(format!("could not compile a rule set: {error}"));
+                    None
+                }
             }
         };
-
         LoadOutcome {
             rule_set,
             summaries,
@@ -154,69 +180,52 @@ impl ListLoader {
         }
     }
 
-    /// Reads a list source into memory.
     fn read_source(&self, source: &ListSource) -> Result<String, String> {
         match source {
             ListSource::Bundled { file } => {
-                let path = AppSettings::resolve_bundled(file).ok_or_else(|| {
-                    format!("bundled list `{file}` was not found next to the executable or in ./lists")
-                })?;
-                std::fs::read_to_string(&path)
-                    .map_err(|e| format!("{}: {e}", path.display()))
+                let resource = self
+                    .resource_dir
+                    .as_ref()
+                    .map(|dir| dir.join("lists").join(file))
+                    .filter(|path| path.is_file());
+                let path = resource
+                    .or_else(|| AppSettings::resolve_bundled(file))
+                    .ok_or_else(|| {
+                        format!(
+                            "bundled list {file} was not found in installed resources or ./lists"
+                        )
+                    })?;
+                std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))
             }
-            ListSource::Local { path } => std::fs::read_to_string(path)
-                .map_err(|e| format!("{path}: {e}")),
+            ListSource::Local { path } => {
+                std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))
+            }
             ListSource::Remote { url } => self.fetch_remote(url),
         }
     }
 
-    /// Fetches a remote list with the validation described in the module docs.
-    ///
-    /// Uses blocking I/O because list loading happens on a dedicated worker, not
-    /// in an async context, and a few hundred kilobytes of text does not warrant
-    /// making the call path async.
     fn fetch_remote(&self, url: &str) -> Result<String, String> {
-        let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .user_agent(concat!("NullAD/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .map_err(|e| format!("cannot create an HTTP client: {e}"))?;
-
+        let client = self
+            .client
+            .get_or_init(|| {
+                reqwest::blocking::Client::builder()
+                    .timeout(std::time::Duration::from_secs(30))
+                    .user_agent(concat!("NullAD/", env!("CARGO_PKG_VERSION")))
+                    .build()
+                    .map_err(|e| format!("cannot create HTTP client: {e}"))
+            })
+            .as_ref()
+            .map_err(Clone::clone)?;
         let response = client
             .get(url)
             .send()
             .map_err(|e| format!("request failed: {e}"))?;
-
         if !response.status().is_success() {
             return Err(format!("server returned {}", response.status()));
         }
-
-        let text = response
+        response
             .text()
-            .map_err(|e| format!("could not read the response body: {e}"))?;
-
-        // Guard against a captive portal or error page being accepted as a list.
-        let mut sizes = match self.previous_sizes.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-
-        if let Some(&previous) = sizes.get(url) {
-            if previous > 0 {
-                let floor = (previous as f64 * SHRINK_FLOOR) as usize;
-                if text.len() < floor {
-                    return Err(format!(
-                        "downloaded list is {} bytes but the previous one was {}; \
-                         refusing to replace a working list with a much smaller one",
-                        text.len(),
-                        previous
-                    ));
-                }
-            }
-        }
-        sizes.insert(url.to_owned(), text.len());
-
-        Ok(text)
+            .map_err(|e| format!("could not read response body: {e}"))
     }
 }
 
@@ -227,15 +236,17 @@ mod tests {
 
     fn settings_with(text: &str) -> (AppSettings, tempdir::TempFile) {
         let file = tempdir::TempFile::new(text);
-        let mut settings = AppSettings::default();
-        settings.lists = vec![ListEntry {
-            id: 1,
-            name: "test".into(),
-            source: ListSource::Local {
-                path: file.path_string(),
-            },
-            enabled: true,
-        }];
+        let settings = AppSettings {
+            lists: vec![ListEntry {
+                id: 1,
+                name: "test".into(),
+                source: ListSource::Local {
+                    path: file.path_string(),
+                },
+                enabled: true,
+            }],
+            ..AppSettings::default()
+        };
         (settings, file)
     }
 
@@ -315,31 +326,39 @@ mod tests {
 
     #[test]
     fn missing_file_warns_and_does_not_fail_the_load() {
-        let mut settings = AppSettings::default();
-        settings.lists = vec![ListEntry {
-            id: 1,
-            name: "missing".into(),
-            source: ListSource::Local {
-                path: "definitely/not/here.txt".into(),
-            },
-            enabled: true,
-        }];
+        let settings = AppSettings {
+            lists: vec![ListEntry {
+                id: 1,
+                name: "missing".into(),
+                source: ListSource::Local {
+                    path: "definitely/not/here.txt".into(),
+                },
+                enabled: true,
+            }],
+            ..AppSettings::default()
+        };
 
         let outcome = ListLoader::new().load(&settings);
         assert_eq!(outcome.total_rules, 0);
         assert!(
-            outcome.warnings.iter().any(|w| w.contains("definitely/not/here.txt")),
+            outcome
+                .warnings
+                .iter()
+                .any(|w| w.contains("definitely/not/here.txt")),
             "the unreadable path must be named: {:?}",
             outcome.warnings
         );
         // A second warning is expected: with nothing loaded, no rule set could
         // be compiled, and that is reported separately.
         assert!(
-            outcome.warnings.iter().any(|w| w.contains("could not compile")),
+            outcome
+                .warnings
+                .iter()
+                .any(|w| w.contains("could not compile")),
             "the empty result must be reported: {:?}",
             outcome.warnings
         );
-        assert!(outcome.rule_set.is_none());
+        assert!(outcome.rule_set.as_ref().unwrap().rules().next().is_none());
     }
 
     #[test]
@@ -391,6 +410,106 @@ mod tests {
             .iter()
             .any(|w| w.contains("duplicate list id")));
     }
+    #[test]
+    fn failed_reload_retains_only_the_same_identity_and_source() {
+        let (mut settings, file) = settings_with("||ads.example.com^\n");
+        settings.lists[0].id = 42;
+        let loader = ListLoader::new();
+        let valid = loader.load(&settings);
+        assert_eq!(
+            valid
+                .rule_set
+                .as_ref()
+                .unwrap()
+                .rules()
+                .next()
+                .unwrap()
+                .list_id,
+            42
+        );
+        std::fs::write(file.path_string(), "! truncated update\n").unwrap();
+        let fallback = loader.load(&settings);
+        assert_eq!(fallback.total_rules, 1);
+        assert!(fallback
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("last valid")));
+        settings.lists[0].source = ListSource::Local {
+            path: "another/missing/source.txt".into(),
+        };
+        assert_eq!(loader.load(&settings).total_rules, 0);
+    }
+
+    #[test]
+    fn installed_resource_directory_is_used_for_bundled_lists() {
+        let root = crate::test_support::directory();
+        std::fs::create_dir_all(root.join("lists")).unwrap();
+        std::fs::write(
+            root.join("lists").join("installed.txt"),
+            "||installed.example^\n",
+        )
+        .unwrap();
+        let settings = AppSettings {
+            lists: vec![ListEntry {
+                id: 5,
+                name: "installed".into(),
+                source: ListSource::Bundled {
+                    file: "installed.txt".into(),
+                },
+                enabled: true,
+            }],
+            ..AppSettings::default()
+        };
+        let outcome = ListLoader::with_resource_dir(Some(root)).load(&settings);
+        assert_eq!(outcome.total_rules, 1);
+    }
+
+    #[test]
+    fn invalid_remote_body_does_not_lower_the_shrink_baseline() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/list", listener.local_addr().unwrap());
+        let valid = (0..12)
+            .map(|index| format!("||advertising-tracker-{index}.example.com^\n"))
+            .collect::<String>();
+        let invalid = format!("!{}\n", "ignored ".repeat(valid.len()));
+        let html = format!(
+            "<!doctype html><html>{}</html>",
+            "portal ".repeat(valid.len())
+        );
+        let server = std::thread::spawn(move || {
+            for body in [valid, html, invalid, "||tiny.example.com^\n".into()] {
+                let (mut socket, _) = listener.accept().unwrap();
+                let mut request = [0u8; 4096];
+                assert!(socket.read(&mut request).unwrap() > 0);
+                write!(
+                    socket,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .unwrap();
+            }
+        });
+        let settings = AppSettings {
+            lists: vec![ListEntry {
+                id: 9,
+                name: "remote".into(),
+                source: ListSource::Remote { url },
+                enabled: true,
+            }],
+            ..AppSettings::default()
+        };
+        let loader = ListLoader::new();
+        assert_eq!(loader.load(&settings).total_rules, 12);
+        assert_eq!(loader.load(&settings).total_rules, 12);
+        assert_eq!(loader.load(&settings).total_rules, 12);
+        let shrink = loader.load(&settings);
+        assert_eq!(shrink.total_rules, 12);
+        assert!(shrink
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("shrank")));
+        server.join().unwrap();
+    }
 }
-
-

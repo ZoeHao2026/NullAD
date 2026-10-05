@@ -2,358 +2,337 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-A high-performance, cross-platform ad and tracker blocker written in Rust.
+NullAD is a Rust ad and tracker blocker with a desktop interface and a headless CLI.
+It filters plaintext HTTP requests, TLS connections by hostname, and DNS queries.
+Its matching engine contains no network, filesystem, or platform integration code.
 
-NullAD filters at three independent layers — DNS, TLS connection setup, and
-plaintext HTTP — and is built around a pure, I/O-free matching engine that is
-shared by every front end.
+## Bundled rules, local detection and proxy coexistence
 
+NullAD ships a **44,442-domain** advertising and tracking snapshot derived from
+official EasyList/EasyPrivacy sources at commit
+`129e63db3096f78e6dc94ac7ca6a15e27b5d1b79` (2026-10-05). The separate rule data is
+CC BY-SA 3.0; application code remains MIT. No runtime subscription download is
+needed. The native defaults load **44,607 rules**: 165 base rules plus this domain
+snapshot. See [sources, extraction and licensing](rules/README.md).
+
+Desktop/CLI enable the bundled lists and Balanced local detection by default.
+They can run independently or together:
+
+| Configuration | Desktop | CLI `check` / `serve` |
+|---|---|---|
+| Rules only | Keep lists enabled; save heuristic mode Off | `--heuristic off` |
+| Local detection only | Disable every list; keep a detection mode enabled | `--no-lists --heuristic balanced` |
+| Both | Keep lists and a detection mode enabled | Defaults, or `--heuristic balanced` |
+
+The independent Chrome/Edge extension **0.2.0** uses the same domain snapshot and
+reversible page cleanup. Both layer checkboxes are initially selected, while
+activation starts **Off**. Extract `nullad-browser-extension.zip`, load it
+unpacked, select the layers, and click a page/all-sites enable button to apply
+them and grant HTTP/HTTPS resource access. Changing all-sites layers preserves
+site allowances; explicitly enabling this page resumes protection for its host.
+Conservative/Balanced changes the heuristic layer, not the domain snapshot.
+The snapshot becomes 87 browser DNR groups; the extension downloads no lists and
+changes no proxy, DNS, certificates or request headers.
+
+The native listener can explicitly chain to an unauthenticated HTTP/SOCKS5
+endpoint with `--upstream-proxy`; upstream failure never falls back to direct
+routing. Existing system proxy takeover needs an explicit upstream; the
+independent extension preserves the existing PAC route.
+
+The current Edge target-site sequence was **Off 16/132 → heuristics only 30 →
+rules only 21 → both 33 → Off 16**. The combined run recorded 15 client-blocked
+requests and passed the two script/two cosmetic checks. Totals also include
+independent network failures. New native checks confirm packaged 44,607-rule
+loading, disabled-list re-enabling, list-free SDK blocking and normal/rule-blocked
+traffic. Native rules + extension + an existing local HTTP upstream produced
+**56/132** twice; this setup has no matched old-232-rule control. This round's
+native normal-close acceptance is **Unknown** because visible QA was stopped.
+Earlier 232-rule / **60/132** and zero-list **16 → 30 → 16** runs are historical
+results from a different setup, not evidence of a measured before/after gain.
+No universal blocking or proxy-version acceptance is claimed. See
+[usage and limits](docs/no-subscription.md),
+[enhanced acceptance](docs/enhanced-validation.md),
+[earlier acceptance](docs/heuristic-validation.md) and
+[measured cost](docs/performance.md).
+
+```powershell
+node --test extension/tests/*.test.cjs
+.\target\release\nullad-cli.exe check http://ads.vendor.example/ad-loader.js --no-lists --heuristic balanced --type script
+.\target\release\nullad-cli.exe serve --no-lists --upstream-proxy http://127.0.0.1:7890
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  nullad-desktop   Tauri 2 shell  +  ui/  (vanilla HTML/JS)    │
-├──────────────────────────────────────────────────────────────┤
-│  nullad-host      platform adapters: proxy, resolver, journal │
-├──────────────────────────────────────────────────────────────┤
-│  nullad-intercept HTTP proxy · TLS SNI · DNS sinkhole         │
-├──────────────────────────────────────────────────────────────┤
-│  nullad-engine    pure matcher: parse · index · match         │
-└──────────────────────────────────────────────────────────────┘
-```
 
-`nullad-engine` depends on no async runtime, no sockets, no filesystem, and no
-platform API. That is what lets the same matcher drive the desktop app, the
-headless CLI, and a future mobile FFI binding without modification.
+The endpoint is an example; use your proxy software's actual port. Local
+detection now recognizes specific third-party ad SDK loaders and advertising
+delivery paths; the browser also reads short multilingual text/ARIA labels.
+These signals and curated domain data have different coverage and can still
+produce false positives.
 
----
+## Historical Windows acceptance (before local detection)
 
-## Status
+This table records runtime source 5ac216b and documentation head 422eb53. New
+checks/packages are recorded separately in the acceptance linked above.
 
-| Component | State |
+| Area | Result and evidence |
 |---|---|
-| `nullad-engine` | Complete — parser, three indexes, lock-free hot reload |
-| `nullad-intercept` | Complete — HTTP proxy, SNI inspection, DNS sinkhole |
-| `nullad-host` | Complete — Windows verified; macOS/Linux implemented, compile-checked |
-| `nullad-core` | Complete — state, settings, list loading, journal integration |
-| `nullad-cli` | Complete — `check`, `load`, `bench`, `serve` |
-| `nullad-desktop` | Code complete and linking; **runtime unverified** (see below) |
-
-**The desktop GUI cannot be launched in the development sandbox in which NullAD
-was built.** The window subsystem is Tauri/WebView2, which starts a separate
-`msedgewebview2.exe` host process and communicates over named pipes; that
-sandbox blocks both, so Tauri fails during app setup with `Access is denied
-(os error 5)`. This was isolated to the environment rather than to this codebase
-by building a Tauri application with an **empty setup closure** — it fails
-identically. The Rust side builds and links correctly, so run
-`target/release/nullad-desktop.exe` outside a sandbox to exercise it.
-
-
----
-
-## Measured performance
-
-All numbers come from `nullad-cli bench` on this machine and are reproducible.
-There is no `criterion` in the offline registry, so the harness is hand-rolled
-and reports exactly the figures the project commits to.
-
-```
-$ nullad-cli bench --iterations 400000 --synthetic 300000
-
-synthetic rule set: 300000 rules, built in 764 ms
-
-WORKLOAD               RULES      REQ/SEC    MEAN us     P50 us     P95 us     P99 us
-loaded rules             232      1767833      0.565      0.500      0.700      0.900
-synthetic rules       300000      4329998      0.230      0.200      0.300      0.500
-
-hot reload under load:
-  10 swaps while 23877203 requests were evaluated concurrently
-  swap latency: mean 7.9 us, max 9.0 us
-  torn or empty rule-set observations: 0
-```
-
-| Criterion | Target | Measured | Verdict |
-|---|---|---|---|
-| Match latency p50 | ≤ 10 µs | 0.2 µs | **met**, 50× better |
-| Match latency p99 | ≤ 50 µs | 0.5 µs | **met**, 100× better |
-| Index build, 500k rules | ≤ 2 s | ~1.3 s | **met** (1M rules in 2.6 s) |
-| Hot swap | < 50 ms, no drops | 9 µs, 0 torn reads | **met**, 5500× better |
-| Release binary | ≤ 25 MB | CLI 2.05 MB, GUI 7.99 MB | **met** |
-| Throughput | ≥ 5M lookups/sec | **4.1–4.4M** | **not met** (~85%) |
-| ABP conformance | ≥ 98% | see *Testing* | see note |
-
-**The throughput target is missed.** Measured 4.1–4.4M lookups/sec against a
-300k-rule set over four runs, with latencies far inside budget. Reaching the
-last 15% would need profiling tooling that is not available in the offline
-registry; the honest position is that the target stands at ~85%.
-
-Matching the *real* 232-rule bundled lists runs at ~1.7M/sec, which is slower
-than the synthetic case on purpose: the real lists contain 13 regex rules and
-the synthetic set is almost entirely domain anchors.
-
-### Where the time goes
-
-The engine's own benchmark breakdown attributes per-request cost. On the real
-232-rule list:
-
-```
-total                  567.0 ns
-domain trie             52.0 ns
-substring automaton    123.2 ns
-regex bucket           366.8 ns
-url lowercasing         37.9 ns
-```
-
-The regex bucket dominates. It is mitigated by deriving a syntactic **minimum
-match length** for each pattern and rejecting any URL shorter than that with a
-single integer compare, skipping the regex engine entirely. That bound is
-verified to be a true lower bound by a randomised property test rather than by
-inspection, including under case-insensitive matching.
-
----
-
-## Building
-
-```bash
-cargo build --release --workspace     # everything
-cargo test  --workspace               # 173 tests
-```
-
-There is no separate front-end build step: `ui/` is plain HTML, CSS and
-JavaScript, served directly by Tauri. That is a deliberate consequence of this
-project's environment, where the npm registry is unreachable, and it also
-removes an entire toolchain from the build.
-
-### Important: this build is offline by design
-
-`.cargo/config.toml` sets `net.offline = true`, so every dependency resolves from
-a workspace-local registry cache in `.cargo-home/` (git-ignored, seeded from the
-machine's global cargo cache). `Cargo.lock` is therefore authoritative and
-**must be committed**.
-
-This was not a stylistic preference. NullAD was written on a host whose Windows
-TLS stack was broken machine-wide (`schannel: AcquireCredentialsHandle failed:
-SEC_E_NO_CREDENTIALS`), which made crates.io unreachable from `cargo`, `git` and
-`curl` alike. Building without the network was the only way to build at all, and
-the result is a project that compiles from a cold cache with no network access.
-On a machine with working TLS, delete the `offline` line to fetch normally.
-
-Because of that constraint, four libraries that would normally be used were
-absent from the registry cache and are implemented here instead:
-
-| Absent crate | What NullAD does instead |
-|---|---|
-| `adblock-rust` | Own ABP parser and index set |
-| `hickory-dns` | Own DNS message codec (parsing, name decompression, response building) |
-| `rcgen` | Not needed — TLS interception is out of MVP scope |
-| `criterion`, `insta`, `proptest` | Hand-rolled bench harness; `assert_eq!` golden tests; a `rand_chacha` property test |
-
-Two consequences are worth knowing about:
-
-- **Test data is not written to the system temp directory.** On a hardened or
-  sandboxed host that directory can be unwritable, so `nullad-core`'s loader
-  tests create their fixtures next to the running test binary instead, where
-  permissions are known good by construction.
-- **The engine is free of logging dependencies.** It writes one line to stderr
-  if it cannot start its reclaimer thread, rather than pulling `tracing` into a
-  crate that is meant to be embeddable anywhere.
-
-
----
-
-## Usage
-
-```bash
-# What do the bundled lists contain?
-nullad-cli load
-
-# Would this be blocked, and by which rule?
-nullad-cli check "https://ads.example.com/banner.gif"
-
-# With page context and a resource type, for $domain= and $third-party rules
-nullad-cli check "https://googletagmanager.com/gtm.js" \
-  --page "https://example.com/" --type script
-
-# Measure this machine
-nullad-cli bench --iterations 400000 --synthetic 300000
-
-# Run the interceptors (no administrator rights needed)
-nullad-cli serve --port 8080 --dns-port 5353
-```
-
-`serve` prints the proxy address; point a client at it. DNS on a port below 1024
-requires administrator or root rights, so `5353` is a good unprivileged choice.
-
-### What each interceptor can and cannot do
-
-| Mechanism | Blocks | Requires elevation | Limitation |
-|---|---|---|---|
-| HTTP proxy | URLs and paths over plaintext HTTP | no | Cannot see inside TLS |
-| TLS SNI | Whole connections, by hostname | no | **Blind to Encrypted Client Hello** |
-| DNS sinkhole | Domains, before any connection | yes, for port 53 | Only sees hostnames |
-
-Filtering HTTPS *URLs* requires certificate-inspecting interception, which means
-installing a locally-trusted root certificate. That is a real security decision
-and is deliberately **not** in this release. NullAD never silently decrypts
-traffic.
-
----
-
-## Filter-list syntax
-
-Supported: `||domain^` anchors, `|` start/end anchors, `^` separators, `*`
-wildcards, `@@` exceptions, `/regex/` literals, hosts-file lines (`0.0.0.0
-host`), `!` and `#` comments, and the `$` options `script`, `image`,
-`stylesheet`, `object`, `xmlhttprequest`, `subdocument`, `document`, `font`,
-`media`, `websocket`, `ping`, `other`, `popup`, `webrtc`, `third-party`,
-`~third-party`, `domain=`, `match-case`, `important`, and their negations.
-
-Parsed and retained but **not applied**: cosmetic rules (`##`), `$csp=`,
-`$redirect=`, `$removeparam=`. Such rules load without error and round-trip.
-
-Matching semantics follow Adblock Plus: an exception (`@@`) wins over a block,
-except that a block carrying `$important` overrides a non-important exception.
-
-### Robustness properties
-
-These are enforced, not aspirational:
-
-- A malformed rule is quarantined with a reason; it never aborts a list load.
-  The bundled lists load 232 rules with zero quarantines.
-- A list that parses to **zero** rules is reported as suspicious rather than
-  silently accepted, because the usual cause is a truncated download.
-- A remote list more than 50% smaller than its previous version is refused, so a
-  captive portal's error page cannot replace a working list.
-- Regex rules are compiled with the `regex` crate only, which guarantees linear
-  time — filter lists cannot induce catastrophic backtracking.
-- DNS name decompression rejects forward pointers and caps expansion, so a
-  hostile packet cannot loop or exhaust memory.
-
----
-
-## System integration and safety
-
-Routing the operating system through NullAD is the most invasive thing it does,
-so every change is written to a **change journal before it is applied** and
-removed only after a successful revert. `nullad-cli` prints outstanding changes;
-the GUI surfaces them and offers a one-click restore.
-
-This ordering is deliberate: recording first means a crash can leave the journal
-claiming a change that may not have happened. Reverting an already-correct
-setting is harmless, whereas losing the record of a real change would strand a
-machine pointing at a proxy that is no longer running.
-
-Platform coverage:
-
-- **Windows** — per-user `HKCU\...\Internet Settings`, no elevation needed;
-  changes broadcast with `InternetSetOption`.
-- **macOS** — `networksetup`, scoped to the service backing the default route.
-- **Linux** — GNOME `gsettings` for the proxy, `/etc/resolv.conf` for DNS,
-  refusing to clobber a symlink managed by systemd-resolved.
-
-Only the Windows path has been runtime-verified; the others are implemented and
-compile-checked.
-
-### On `unsafe`
-
-NullAD contains exactly one `unsafe` block: a call to `InternetSetOptionW` in
-`nullad-host/src/platform/windows.rs`, which has no safe wrapper in
-`windows-sys`. It passes a null handle, a null buffer, and zero length — the
-documented form for broadcasting a settings change. Every other crate is
-`#![forbid(unsafe_code)]`; `nullad-host` uses `deny` so that exactly this one
-call is permitted and any new usage fails the build.
-
----
-
-## Testing
-
-177 tests pass across the workspace, with zero compiler warnings. They are
-weighted toward the engine, where the interesting failure modes live.
-
-```
-nullad-engine      82     parser, indexes, matching semantics, hot reload
-nullad-intercept   42     HTTP framing, ClientHello parsing, DNS codec
-nullad-core        18     settings, list loading, decision log
-nullad-host        18     journal, proxy settings, DNS settings
-nullad-cli         12     argument handling, benchmark statistics
-nullad-desktop      5     command helpers
-```
-
-Beyond unit tests:
-
-- **`tests/e2e.py`** — 20 end-to-end checks. Starts a real origin server and the
-  real proxy and DNS sinkhole, then drives actual traffic through them:
-  forwarding, blocking with the rule cited, loopback never blocked, DNS
-  sinkhole answers for A and AAAA, malformed DNS packets survived, and scoped
-  exception rules allowing precisely what they should.
-- **Property tests** — random URL generation verifies the regex minimum-length
-  bound is never an over-estimate, for case-sensitive *and* case-insensitive
-  patterns.
-- **Concurrency test** — `bench` swaps rule sets while a second thread evaluates
-  requests, asserting zero torn or empty rule-set observations.
-
-Run everything:
-
-```bash
-cargo test --workspace
+| Windows engineering checks | **Pass**: formatting, strict Clippy and 229 workspace tests (3 explicitly ignored); release build recorded in validation |
+| Network and lifecycle | **Pass**: 22 local HTTP/DNS checks; ports rebound after 20 cycles and 40 concurrent start/stop operations |
+| Settings, rules and recovery | **Pass**: 30 core and 32 host regressions, including failed persistence, obsolete reloads and retained failed restores |
+| Windows system proxy | **Pass**: explicit apply/revert and CLI Ctrl+Break restore all four raw registry values; DNS unchanged, pending=0 |
+| Native Windows desktop | **Pass**: four pages, IPC, Chinese/English, dark theme, real traffic/logs, explicit save, restart marker and close cleanup without tray |
+| Native minimum window | **Pass**: final portable GUI checked on all four pages at 840x560, including the corrected log timestamp column |
+| Privileged Windows DNS / IPv6 UDP | **Unknown**: no privileged DNS writes; no passing native IPv6 UDP loopback observation |
+| Tray menu / actual 125%/150% OS scaling | **Unknown**: browser equivalents pass but do not establish native system scaling or tray menu acceptance |
+| Delivery packages / remote CI | **Pass**: NSIS/ZIP builds, clean-directory portable startup and [Windows CI](https://github.com/ZoeHao2026/NullAD/actions/runs/37204735279); installation/uninstallation remain Unknown. See [Windows validation](docs/windows-validation.md) |
+| macOS and Linux | **Deferred**: known restoration gaps and no native acceptance |
+
+No executed final ordinary check failed; unverified work remains Unknown/Deferred.
+
+A passing build or unit test does not establish successful installation, visible
+desktop operation, or restoration on another operating system.
+See [Windows validation](docs/windows-validation.md) for the acceptance procedure
+and remaining gaps.
+
+## Build on Windows
+
+Use Rust 1.96 or later, the MSVC toolchain, Visual Studio C++ build tools with a
+Windows SDK, and WebView2 Runtime for the desktop application. Node.js is needed
+for the UI test runner and the Tauri packaging command; Python is needed for the
+local traffic acceptance suite.
+
+Run from the repository root:
+
+```powershell
+cargo build --release --workspace --locked
+cargo test --workspace --all-features --locked
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+node --test ui/tests/ui.test.cjs
 python tests/e2e.py
 ```
 
----
+When the MSVC environment needs initialization, use:
 
-## Layout
-
-```
-crates/
-  nullad-engine/      pure matcher, no I/O
-  nullad-api/         DTOs and traits shared with any UI
-  nullad-intercept/   HTTP proxy, TLS SNI, DNS sinkhole
-  nullad-host/        platform adapters, change journal
-  nullad-core/        orchestration, settings, list loading
-  nullad-cli/         headless CLI
-  nullad-desktop/     Tauri application
-ui/                   HTML/CSS/JS front end, no build step
-lists/                bundled filter lists
-tests/e2e.py          end-to-end interception test
+```powershell
+scripts\build.bat release
+scripts\build.bat test
 ```
 
-`nullad-desktop` depends only on `nullad-api` and `nullad-core`. Replacing the
-web UI means rewriting `ui/` and the thin command bindings in
-`crates/nullad-desktop/src/commands.rs`, and touching no engine code.
+Cargo uses its normal cache and can fetch dependencies. Offline builds are an
+explicit option after the necessary dependencies are cached:
 
-## Documentation languages
+```powershell
+cargo build --release --workspace --locked --offline
+scripts\build.bat release --offline
+```
 
-The full documentation is available in two languages:
+Keep `Cargo.lock` committed. The repository does not require a private or
+workspace-local Cargo registry. The UI is HTML, CSS and JavaScript; it has no
+separate frontend compilation step.
 
-- **English** — this file
-- **[简体中文](README.zh-CN.md)** — a complete Chinese translation
+### Windows delivery formats
 
-The crate-level module documentation in `nullad-engine`, `nullad-intercept`,
-`nullad-host`, `nullad-core` and `nullad-cli` also carries a 中文说明 section
-summarising each layer's responsibilities, so the code is self-describing for a
-Chinese-speaking maintainer without a separate doc build.
+The desktop installer is built with NSIS:
 
-The `nullad-cli` help text and the GUI labels remain English; localising them
-would mean threading a locale through the CLI and the web UI, which is a
-UI-layer task rather than an engine one.
+```powershell
+Push-Location crates/nullad-desktop
+npx --yes @tauri-apps/cli@2.12.1 build --bundles nsis -- --locked
+Pop-Location
+```
 
----
+The installer output is under `target/release/bundle/nsis/`. It includes the
+desktop resources and filter lists. The desktop loads those lists from Tauri's
+resource directory, so startup does not depend on the launch directory.
 
-## Deliberate limitations
+A portable CLI directory contains:
 
-Stated plainly rather than left for a user to discover:
+```text
+NullAD-cli/
+  nullad-cli.exe
+  lists/
+    nullad-base.txt
+    nullad-hosts.txt
+    THIRD_PARTY_NOTICES.md
+```
 
-1. **No HTTPS URL filtering.** Needs certificate interception, which is a
-   security decision users must make knowingly. Not in this release.
-2. **ECH defeats SNI filtering.** Encrypted Client Hello hides the hostname from
-   the connection layer entirely.
-3. **Throughput is ~85% of target**, as measured above.
-4. **DNS needs elevation** to bind port 53 and repoint the resolver, so it is
-   off by default and the rest of NullAD works without it.
-5. **The GUI is runtime-unverified** because it was developed inside a sandbox
-   that blocks the WebView2 host process, for the reason given at the top.
-6. **No mobile binaries.** `nullad-engine` and `nullad-api` are written to
-   compile for those targets, but no Android/iOS build exists yet.
-7. **Cosmetic filtering is parsed, not applied.** No element hiding.
+The CLI finds default lists in `./lists`, then beside the executable. Use
+`--list <PATH>` to select a specific list; the option is repeatable. A portable
+CLI archive and an NSIS installer are separate artifacts and require separate
+startup checks. `scripts/package-windows.ps1` produces desktop/CLI portable ZIPs,
+the independent browser extension ZIP, NSIS installer and SHA256SUMS.txt after
+both release builds complete. Extension loading is a separate browser operation.
 
-## Licence
+## Use
 
-MIT. See [LICENSE](LICENSE).
+```powershell
+# Inspect the bundled lists and rules.
+.\target\release\nullad-cli.exe load
+
+# Evaluate a URL.
+.\target\release\nullad-cli.exe check "https://ads.example.com/banner.gif"
+
+# Include the initiating page and resource type.
+.\target\release\nullad-cli.exe check "https://googletagmanager.com/gtm.js" --page "https://example.com/" --type script
+
+# Run local HTTP and DNS listeners. Configure clients to use these endpoints.
+.\target\release\nullad-cli.exe serve --port 8080 --dns-port 5353
+
+# Opt in to changing the system proxy while serving.
+.\target\release\nullad-cli.exe serve --port 8080 --system-proxy
+```
+
+The desktop interface defaults to **Simplified Chinese**, with **English**
+available in settings. Listener settings changed during protection take effect
+after a restart; status reports the actual bound ports and whether a restart is
+needed. DNS is disabled by default. Starting a DNS listener does not itself
+configure the operating system resolver.
+
+| Mechanism | Filters | Limit |
+|---|---|---|
+| HTTP proxy | Plaintext HTTP URLs and paths | Does not inspect encrypted HTTPS paths or response content |
+| TLS SNI | TLS connections by hostname | Encrypted Client Hello can hide that hostname |
+| DNS sinkhole | Domain queries routed through its listener | Cannot identify a URL path or control applications using another resolver |
+
+NullAD does not install a root certificate or decrypt HTTPS. Manual client
+configuration and `--system-proxy` are distinct: system proxy integration only
+covers applications that honor that platform's proxy settings. System DNS
+changes need administrative privileges. Low-port binding rules vary by OS;
+an unavailable port or insufficient privilege is reported by the listener.
+
+CLI `serve` changes the system proxy only with `--system-proxy`, after every
+requested listener binds. It journals the previous settings and, on Ctrl+C
+(or Ctrl+Break on Windows), stops its listeners and connections before restoring
+and verifying those settings. A restore failure exits with an error and retains
+the recovery snapshot for the desktop application. An existing pending snapshot
+must be restored before a new CLI session can take over the system proxy.
+
+### Isolated settings and QA
+
+By default, settings, data and logs use the operating system's per-user
+directories. Set `NULLAD_HOME` to a **non-empty absolute path** to isolate them:
+
+```powershell
+$env:NULLAD_HOME = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'NullAD-QA'
+.\target\release\nullad-desktop.exe
+```
+
+The isolated directory contains `config/`, `data/` and `logs/`. It is an
+environment option, not a serialized setting. `NULLAD_WEBVIEW_DATA_DIR` can
+also isolate WebView2's user-data directory on Windows. These variables isolate
+application files; opting into system proxy changes still changes the real OS
+configuration.
+
+## Rules and loading
+
+`nullad-hosts.txt` contains the 44,442-domain snapshot; the existing base list
+remains separate. EasyList covers advertising, while EasyPrivacy also covers
+analytics, tracking and telemetry. Telemetry is not synonymous with advertising.
+The snapshot imports only unconditional domain anchors, keeps conditional rules
+out, and excludes domains affected by literal-host exceptions. It is a domain
+subset, not execution of every EasyList/EasyPrivacy rule. See
+[the reproducible data process](rules/README.md).
+
+Supported rule forms include domain anchors (`||domain^`), start/end anchors,
+separator markers, wildcards, exceptions (`@@`), regex literals and hosts-file
+entries. Resource-type, third-party, domain, match-case and important options
+are handled by the engine. Exceptions normally override blocking rules;
+an important blocking rule overrides a non-important exception.
+
+The native engine recognizes/counts cosmetic list rules but does not apply them.
+The independent extension hides elements using local semantic detection; it
+does not import ABP cosmetic subscriptions.
+The `$csp`, `$redirect` and `$removeparam` payloads are retained by the parser
+but are not applied by the interceptors.
+
+Malformed rules are quarantined. The desktop loader parses accepted content
+once with its configured list ID and reuses one HTTP client. Failed reads,
+zero-rule updates, HTML responses and excessive remote-list shrinkage do not
+replace the last valid rules for the **same list ID and source**. Changing a
+source does not reuse a different source's cached rules. Disabled lists remain
+in the desktop catalog so they can be enabled again; displayed cached counts
+refer only to the same ID and source. Disabling every list explicitly installs
+an empty rule set, while enabled local detection continues. A reload started
+against obsolete settings cannot publish over a newer configuration.
+
+## Recovery and platform boundaries
+
+System changes are journaled before application. A partially failed apply
+attempts rollback and retains its original snapshot. Restoration checks the
+result before clearing that kind of entry; failed restoration remains visible
+and can be retried. Journal updates are serialized and written atomically.
+Corrupt recovery files are preserved and surfaced as an error.
+
+Windows proxy changes use the current user's Internet Settings and broadcast
+the update to applications. New snapshots preserve existence, registry type
+and raw bytes of the four touched values; restoration sets or deletes exactly
+from that snapshot. Legacy proxy snapshots without that metadata remain pending
+with an error. Windows DNS snapshots retain an adapter GUID and
+the IPv4 DHCP/static mode; current interface indices are resolved again when
+restoring. Old DNS snapshots without a mode are retained with an error instead
+of guessing whether they used DHCP. IPv6 system resolver configuration is not
+modified by this adapter.
+
+macOS and Linux are **not accepted release targets for automatic system
+configuration** at present:
+
+- **macOS:** service parsing and network-service identity need native validation;
+  the generic proxy snapshot does not preserve separate HTTP/HTTPS settings or
+  the complete PAC state. DHCP DNS currently cannot be captured by that backend.
+- **Linux:** proxy integration targets GNOME `gsettings`, rather than every
+  desktop. Auto mode, independent HTTPS state and bypass-list restoration have
+  known gaps. Rewriting a regular `resolv.conf` does not preserve all original
+  directives; managed symlinks are refused. NetworkManager/systemd-resolved
+  integration is not implemented.
+
+Mobile binaries and native HTTPS decryption are outside the current scope.
+Browser resource blocking and page cleanup are provided by the independent
+extension within the documented limits.
+
+## Tests and historical performance
+
+New default local-detection cost is separately measured in [performance.md](docs/performance.md).
+The baseline comparison below predates those additional features.
+
+Normal tests use mock system adapters, isolated files and local traffic
+fixtures. Tests that write live proxy settings are ignored unless explicitly
+selected. See [Windows validation](docs/windows-validation.md) before running
+a live system test.
+
+Five warmed runs per configuration compared the unchanged baseline and optimized
+release builds on the same machine. With 100,000 synthetic rules, mixed-load
+engine throughput was **1.030x**, while actual `decide` with its 500-entry log
+was **11.485x**. Allocation in that decision path fell from about 480 KB to
+116 B per request; the reused engine path was essentially unchanged. See
+[performance validation](docs/performance.md) for latency, smaller workloads
+and all raw data. A quick CLI measurement is:
+
+```powershell
+.\target\release\nullad-cli.exe bench --iterations 400000 --synthetic 300000 --json
+```
+
+The full comparison is recorded in `docs/performance-comparison.json`. Synthetic
+matching results describe that workload; they do not establish real-network
+throughput, complete Adblock Plus conformance, or another machine's performance.
+
+## Architecture
+
+| Component | Responsibility |
+|---|---|
+| `nullad-engine` | Parsing, indexes, matching and atomic rule-set replacement |
+| `nullad-api` | Shared status types and interfaces |
+| `nullad-intercept` | HTTP proxy, TLS hostname inspection, DNS UDP/TCP |
+| `nullad-host` | OS proxy/DNS adapters, filesystem paths and recovery journal |
+| `nullad-core` | Settings, runtime status, list loading and restoration reports |
+| `nullad-cli` | `check`, `load`, `bench` and `serve` |
+| `nullad-desktop` + `ui/` | Tauri shell, IPC commands, tray and interface |
+| `extension/` | Independent browser domain DNR, request heuristics and reversible DOM cleanup |
+
+The engine is shared across the CLI and desktop. The desktop owns asynchronous
+listener lifecycle and task cancellation; it delegates system changes and
+matching to the appropriate layers.
+
+## License
+
+Application code: [MIT](LICENSE). The derived domain snapshot is independently
+[CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/), with attribution
+to the EasyList authors. Retain the data's license and change notices when
+redistributing it; see [rule-data notices](lists/THIRD_PARTY_NOTICES.md) and
+[official upstream licensing](https://easylist.to/pages/licence.html).

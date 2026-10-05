@@ -1,0 +1,13 @@
+{
+  "zeroListSdkBlock": true,
+  "outsideRepository": true,
+  "bundledRules": 44607,
+  "guiMatchesTestedExecutable": true,
+  "nsisCreated": true,
+  "nsisInstalled": "Unknown",
+  "extensionFiles": 15,
+  "rulesMatch": true,
+  "packagedE2EChecks": 23,
+  "productionOptionalOnly": true,
+  "extensionVersion": "0.2.0"
+}

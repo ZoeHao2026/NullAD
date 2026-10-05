@@ -10,6 +10,7 @@ authors.workspace = true
 [dependencies]
 nullad-engine.workspace = true
 nullad-api.workspace = true
+smallvec.workspace = true
 tokio.workspace = true
 futures-util.workspace = true
 bytes.workspace = true
@@ -18,6 +19,7 @@ hyper-util.workspace = true
 http.workspace = true
 http-body-util.workspace = true
 httparse = "1"
+psl = "2"
 rustls.workspace = true
 tokio-rustls.workspace = true
 rustls-pki-types.workspace = true

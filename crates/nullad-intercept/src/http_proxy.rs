@@ -20,14 +20,19 @@
 //! awkward through an abstraction that expects to normalise requests for you.
 
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::watch;
+use tokio::task::JoinSet;
 
 use nullad_engine::ResourceType;
 
+use crate::lifecycle::{stop_children, stopped};
+use crate::prefixed::PrefixedIo;
+use crate::upstream::{split_authority, UpstreamProxy};
 use crate::{is_local_address, DecisionSource, EngineHandle};
 
 /// Maximum bytes of request head we will buffer.
@@ -36,6 +41,7 @@ const MAX_HEAD: usize = 64 * 1024;
 const HEAD_TIMEOUT: Duration = Duration::from_secs(15);
 /// Timeout for establishing an upstream connection.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_CONNECTIONS: usize = 256;
 
 /// Configuration for the HTTP proxy.
 #[derive(Debug, Clone)]
@@ -46,6 +52,8 @@ pub struct ProxyConfig {
     pub head_timeout: Duration,
     /// How long to wait for an upstream connection.
     pub connect_timeout: Duration,
+    /// Explicit route through an existing proxy. None connects directly.
+    pub upstream: Option<UpstreamProxy>,
 }
 
 impl Default for ProxyConfig {
@@ -54,6 +62,7 @@ impl Default for ProxyConfig {
             listen: "127.0.0.1:8080".parse().expect("valid literal address"),
             head_timeout: HEAD_TIMEOUT,
             connect_timeout: CONNECT_TIMEOUT,
+            upstream: None,
         }
     }
 }
@@ -62,7 +71,7 @@ impl Default for ProxyConfig {
 #[derive(Debug)]
 enum HeadOutcome {
     /// A complete request was parsed.
-    Request(Box<ProxyRequest>),
+    Request(Box<ProxyRequest>, Vec<u8>),
     /// The connection produced something unusable; this response explains why.
     Reject(String),
     /// The client closed or timed out before completing a request.
@@ -109,18 +118,15 @@ impl ProxyRequest {
     #[must_use]
     pub fn host(&self) -> Option<String> {
         if self.is_connect() {
-            let host = self.target.split(':').next()?;
-            return (!host.is_empty()).then(|| host.to_ascii_lowercase());
+            return split_authority(self.target.trim())
+                .ok()
+                .map(|(host, _)| host);
         }
         if self.target.contains("://") {
             return nullad_engine::request::extract_host(&self.target);
         }
-        self.header("host").map(|h| {
-            h.split(':')
-                .next()
-                .unwrap_or(h)
-                .trim()
-                .to_ascii_lowercase()
+        self.header("host").and_then(|host| {
+            nullad_engine::request::extract_host(&format!("http://{}/", host.trim()))
         })
     }
 
@@ -133,11 +139,16 @@ impl ProxyRequest {
             self.target.clone()
         } else {
             let host = self.header("host").unwrap_or_default();
-            format!("http://{host}{}", self.target)
+            let path = if self.target == "*" {
+                "/"
+            } else {
+                &self.target
+            };
+            format!("http://{host}{path}")
         }
     }
 
-    /// Guesses the resource type from the method and accept headers.
+    /// Reads browser destination metadata, then falls back to MIME/URL hints.
     ///
     /// This is necessarily approximate: only a browser knows the real
     /// destination type. `Xhr` is used for non-document methods and `Document`
@@ -148,13 +159,97 @@ impl ProxyRequest {
         if self.is_connect() {
             return ResourceType::Document;
         }
+        if let Some(destination) = self.header("sec-fetch-dest") {
+            let resource = match destination.trim() {
+                "document" => Some(ResourceType::Document),
+                "iframe" | "frame" => Some(ResourceType::Subdocument),
+                "script" | "worker" | "sharedworker" | "serviceworker" => {
+                    Some(ResourceType::Script)
+                }
+                "image" => Some(ResourceType::Image),
+                "style" => Some(ResourceType::Stylesheet),
+                "font" => Some(ResourceType::Font),
+                "audio" | "video" | "track" => Some(ResourceType::Media),
+                "object" | "embed" => Some(ResourceType::Object),
+                "empty" if self.header("sec-fetch-mode") == Some("websocket") => {
+                    Some(ResourceType::Websocket)
+                }
+                "empty" => Some(ResourceType::Xhr),
+                _ => None,
+            };
+            if let Some(resource) = resource {
+                return resource;
+            }
+        }
+        if self.header("sec-fetch-mode") == Some("navigate") {
+            return ResourceType::Document;
+        }
+        let accept = self
+            .header("accept")
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if accept.contains("text/html") || accept.contains("application/xhtml+xml") {
+            return ResourceType::Document;
+        }
+        if accept.contains("image/") {
+            return ResourceType::Image;
+        }
+        if accept.contains("text/css") {
+            return ResourceType::Stylesheet;
+        }
+        if accept.contains("javascript") {
+            return ResourceType::Script;
+        }
+        let path = self
+            .target
+            .split(['?', '#'])
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if path.ends_with(".js") || path.ends_with(".mjs") {
+            return ResourceType::Script;
+        }
+        if path.ends_with(".css") {
+            return ResourceType::Stylesheet;
+        }
+        if [".png", ".gif", ".jpg", ".jpeg", ".webp", ".svg", ".ico"]
+            .iter()
+            .any(|suffix| path.ends_with(suffix))
+        {
+            return ResourceType::Image;
+        }
+        if [".woff", ".woff2", ".ttf", ".otf"]
+            .iter()
+            .any(|suffix| path.ends_with(suffix))
+        {
+            return ResourceType::Font;
+        }
+        if [".mp4", ".webm", ".mp3", ".ogg", ".m4a"]
+            .iter()
+            .any(|suffix| path.ends_with(suffix))
+        {
+            return ResourceType::Media;
+        }
         match self.method.to_ascii_uppercase().as_str() {
-            "GET" | "HEAD" => match self.header("accept") {
-                Some(accept) if accept.contains("text/html") => ResourceType::Document,
-                _ => ResourceType::Other,
-            },
+            "GET" | "HEAD" => ResourceType::Other,
             _ => ResourceType::Xhr,
         }
+    }
+
+    /// Uses only a valid HTTP(S) Referer or Origin as initiating context.
+    /// Missing or opaque origins stay unknown; CONNECT has no page context.
+    #[must_use]
+    pub fn page_for_filtering(&self) -> Option<&str> {
+        if self.is_connect() {
+            return None;
+        }
+        ["referer", "origin"].iter().find_map(|name| {
+            let value = self.header(name)?.trim();
+            ((value.starts_with("http://") || value.starts_with("https://"))
+                && !value.chars().any(char::is_whitespace)
+                && nullad_engine::request::extract_host(value).is_some())
+            .then_some(value)
+        })
     }
 }
 
@@ -207,39 +302,36 @@ pub fn parse_request_head(buffer: &[u8]) -> Result<Option<ProxyRequest>, String>
 /// URL omits it.
 #[must_use]
 pub fn upstream_authority(request: &ProxyRequest) -> Option<String> {
-    if request.is_connect() {
-        let authority = request.target.trim();
-        if authority.is_empty() {
-            return None;
-        }
-        // CONNECT always includes the port.
-        return Some(authority.to_owned());
-    }
-
-    let host = request.host()?;
-    let port = if let Some(after) = request.target.split("://").nth(1) {
-        let authority = after.split('/').next().unwrap_or_default();
-        if let Some(colon) = authority.rfind(':') {
-            authority[colon + 1..].parse::<u16>().ok()
+    let (authority, default_port) = if request.is_connect() {
+        (request.target.trim(), None)
+    } else if let Some((scheme, rest)) = request.target.split_once("://") {
+        let port = if scheme.eq_ignore_ascii_case("http") {
+            80
+        } else if scheme.eq_ignore_ascii_case("https") {
+            443
         } else {
-            None
-        }
+            return None;
+        };
+        (rest.split(['/', '?', '#']).next()?, Some(port))
     } else {
-        request
-            .header("host")
-            .and_then(|h| h.rsplit_once(':'))
-            .and_then(|(_, port)| port.parse::<u16>().ok())
+        (request.header("host")?.trim(), Some(80))
     };
-
-    let scheme = request
-        .target
-        .split("://")
-        .next()
-        .unwrap_or("http")
-        .to_ascii_lowercase();
-    let default_port = if scheme == "https" { 443 } else { 80 };
-
-    Some(format!("{host}:{}", port.unwrap_or(default_port)))
+    let needs_port = if authority.starts_with('[') {
+        authority.ends_with(']')
+    } else {
+        !authority.contains(':')
+    };
+    let normalized = if needs_port {
+        format!("{authority}:{}", default_port?)
+    } else {
+        authority.to_owned()
+    };
+    let (host, port) = split_authority(&normalized).ok()?;
+    Some(if host.contains(':') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    })
 }
 
 /// Builds the origin-form request head to send upstream.
@@ -251,8 +343,10 @@ pub fn build_upstream_head(request: &ProxyRequest, authority: &str) -> String {
     let path = if request.target.contains("://") {
         // Strip scheme and authority, keeping the path and query.
         match request.target.split_once("://") {
-            Some((_, rest)) => match rest.find('/') {
+            Some((_, rest)) => match rest.find(['/', '?']) {
+                Some(query) if rest.as_bytes()[query] == b'?' => format!("/{}", &rest[query..]),
                 Some(slash) => rest[slash..].to_owned(),
+                None if request.method.eq_ignore_ascii_case("OPTIONS") => "*".to_owned(),
                 None => "/".to_owned(),
             },
             None => request.target.clone(),
@@ -269,7 +363,12 @@ pub fn build_upstream_head(request: &ProxyRequest, authority: &str) -> String {
         // Hop-by-hop headers must not be forwarded.
         if matches!(
             lower.as_str(),
-            "proxy-connection" | "connection" | "keep-alive" | "proxy-authorization" | "te" | "upgrade"
+            "proxy-connection"
+                | "connection"
+                | "keep-alive"
+                | "proxy-authorization"
+                | "te"
+                | "upgrade"
         ) {
             continue;
         }
@@ -296,14 +395,35 @@ pub fn build_upstream_head(request: &ProxyRequest, authority: &str) -> String {
 /// Builds a block response.
 #[must_use]
 pub fn build_block_response(rule: Option<&str>, host: &str) -> String {
+    build_effective_block_response(rule, None, host)
+}
+
+fn build_effective_block_response(rule: Option<&str>, reason: Option<&str>, host: &str) -> String {
     let detail = match rule {
         Some(rule) => format!("Blocked by NullAD rule: {rule}"),
-        None => "Blocked by NullAD".to_owned(),
+        None => reason.map_or_else(
+            || "Blocked by NullAD".to_owned(),
+            |reason| format!("Blocked by NullAD detection: {reason}"),
+        ),
     };
+    let escape = |value: &str| {
+        value
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('\'', "&#39;")
+    };
+    let safe_host = escape(host);
+    let detail = escape(&detail);
+    let header_host: String = host
+        .chars()
+        .filter(|character| !character.is_control())
+        .collect();
     let body = format!(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>Blocked</title></head>\
          <body style=\"font-family:system-ui;margin:4rem auto;max-width:40rem\">\
-         <h1>Blocked by NullAD</h1><p>{host}</p><pre>{detail}</pre></body></html>"
+         <h1>Blocked by NullAD</h1><p>{safe_host}</p><pre>{detail}</pre></body></html>"
     );
 
     format!(
@@ -311,7 +431,7 @@ pub fn build_block_response(rule: Option<&str>, host: &str) -> String {
          Content-Type: text/html; charset=utf-8\r\n\
          Content-Length: {}\r\n\
          X-NullAD-Blocked: 1\r\n\
-         X-NullAD-Host: {host}\r\n\
+         X-NullAD-Host: {header_host}\r\n\
          Connection: close\r\n\
          \r\n{body}",
         body.len()
@@ -335,17 +455,33 @@ pub fn build_error_response(status: u16, reason: &str, message: &str) -> String 
 /// A running filtering proxy.
 #[derive(Debug)]
 pub struct ProxyServer {
-    listener: TcpListener,
+    listener: Mutex<Option<TcpListener>>,
+    address: SocketAddr,
     handle: EngineHandle,
     config: ProxyConfig,
 }
 
 impl ProxyServer {
     /// Binds the listener.
-    pub async fn bind(config: ProxyConfig, handle: EngineHandle) -> std::io::Result<Self> {
+    pub async fn bind(mut config: ProxyConfig, handle: EngineHandle) -> std::io::Result<Self> {
         let listener = TcpListener::bind(config.listen).await?;
+        let address = listener.local_addr()?;
+        if let Some(upstream) = &config.upstream {
+            let (host, port) = upstream.endpoint();
+            if port == address.port()
+                && (host.parse().is_ok_and(is_local_address)
+                    || matches!(host, "localhost" | "localhost.localdomain"))
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "upstream proxy points back to NullAD",
+                ));
+            }
+        }
+        config.listen = address;
         Ok(Self {
-            listener,
+            listener: Mutex::new(Some(listener)),
+            address,
             handle,
             config,
         })
@@ -353,38 +489,69 @@ impl ProxyServer {
 
     /// The address actually bound.
     pub fn local_addr(&self) -> std::io::Result<SocketAddr> {
-        self.listener.local_addr()
+        Ok(self.address)
     }
 
     /// Runs the accept loop until cancelled.
     pub async fn run(self: Arc<Self>) {
-        loop {
-            let (stream, peer) = match self.listener.accept().await {
-                Ok(pair) => pair,
-                Err(err) => {
-                    tracing::warn!(error = %err, "proxy accept failed");
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                    continue;
-                }
-            };
-
-            // Disable Nagle: proxy traffic is many small, latency-sensitive
-            // writes, and coalescing them adds delay without saving bandwidth.
-            let _ = stream.set_nodelay(true);
-
-            let this = Arc::clone(&self);
-            tokio::spawn(async move {
-                if let Err(err) = this.serve_connection(stream).await {
-                    tracing::debug!(error = %err, %peer, "proxy connection ended");
-                }
-            });
+        let (_keep_alive, stop) = watch::channel(false);
+        if let Err(err) = self.run_until(stop).await {
+            tracing::warn!(error = %err, "proxy listener stopped");
         }
+    }
+
+    /// Runs with owned connections until true is sent or the sender closes.
+    /// Completion means every child has exited and the listening port is free.
+    pub async fn run_until(
+        self: Arc<Self>,
+        mut stop: watch::Receiver<bool>,
+    ) -> std::io::Result<()> {
+        let listener = self
+            .listener
+            .lock()
+            .map_err(|_| std::io::Error::other("proxy listener lock poisoned"))?
+            .take()
+            .ok_or_else(|| std::io::Error::other("proxy listener already running or stopped"))?;
+        let mut children = JoinSet::new();
+        loop {
+            tokio::select! {
+                biased;
+                _ = stopped(&mut stop) => break,
+                result = children.join_next(), if !children.is_empty() => {
+                    if let Some(Ok(Err(err))) = result {
+                        tracing::debug!(error = %err, "proxy connection ended");
+                    }
+                }
+                accepted = listener.accept(), if children.len() < MAX_CONNECTIONS => {
+                    match accepted {
+                        Ok((stream, peer)) => {
+                            let _ = stream.set_nodelay(true);
+                            let this = Arc::clone(&self);
+                            children.spawn(async move {
+                                tracing::trace!(%peer, "proxy connection accepted");
+                                this.serve_connection(stream).await
+                            });
+                        }
+                        Err(err) => {
+                            tracing::warn!(error = %err, "proxy accept failed");
+                            tokio::select! {
+                                _ = stopped(&mut stop) => break,
+                                _ = tokio::time::sleep(Duration::from_millis(50)) => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        stop_children(&mut children).await;
+        drop(listener);
+        Ok(())
     }
 
     /// Serves one client connection.
     pub async fn serve_connection(&self, mut client: TcpStream) -> std::io::Result<()> {
-        let request = match self.read_head(&mut client).await? {
-            HeadOutcome::Request(request) => *request,
+        let (request, prefix) = match self.read_head(&mut client).await? {
+            HeadOutcome::Request(request, prefix) => (*request, prefix),
             HeadOutcome::Reject(response) => {
                 client.write_all(response.as_bytes()).await?;
                 client.flush().await?;
@@ -411,18 +578,20 @@ impl ProxyServer {
             }
         }
 
-        let blocked = self.handle.decide(
+        let decision = self.handle.decide_result(
             &target_url,
             request.resource_type(),
-            None,
-            DecisionSource::Proxy,
+            request.page_for_filtering(),
+            if request.is_connect() {
+                DecisionSource::Connect
+            } else {
+                DecisionSource::Proxy
+            },
         );
 
-        if blocked {
-            // The rule that matched is looked up again only for reporting, so
-            // the common path does not pay for it.
-            let rule = self.explain(&target_url);
-            let response = build_block_response(rule.as_deref(), &host);
+        if decision.blocked {
+            let rule = decision.matched_rule.as_ref().map(|rule| rule.raw.as_str());
+            let response = build_effective_block_response(rule, decision.reason.as_deref(), &host);
             client.write_all(response.as_bytes()).await?;
             client.flush().await?;
             return Ok(());
@@ -438,9 +607,11 @@ impl ProxyServer {
             return Ok(());
         };
 
+        // No direct fallback: silently bypassing a failed existing proxy would
+        // break its routing/privacy guarantees. Timeout includes negotiation.
         let upstream = match tokio::time::timeout(
             self.config.connect_timeout,
-            TcpStream::connect(&authority),
+            self.connect_upstream(&authority, request.is_connect()),
         )
         .await
         {
@@ -464,12 +635,26 @@ impl ProxyServer {
                 return Ok(());
             }
         };
-        let _ = upstream.set_nodelay(true);
-
+        let client = PrefixedIo::new(prefix, client);
         if request.is_connect() {
             self.tunnel(client, upstream).await
         } else {
             self.forward(client, upstream, &request, &authority).await
+        }
+    }
+
+    async fn connect_upstream(
+        &self,
+        authority: &str,
+        tunnel: bool,
+    ) -> std::io::Result<PrefixedIo<TcpStream>> {
+        match &self.config.upstream {
+            Some(proxy) => proxy.connect(authority, tunnel, self.config.listen).await,
+            None => {
+                let stream = TcpStream::connect(authority).await?;
+                let _ = stream.set_nodelay(true);
+                Ok(PrefixedIo::new(Vec::new(), stream))
+            }
         }
     }
 
@@ -482,7 +667,17 @@ impl ProxyServer {
         let read = async {
             loop {
                 match parse_request_head(&buffer) {
-                    Ok(Some(request)) => return Ok(HeadOutcome::Request(Box::new(request))),
+                    Ok(Some(request)) => {
+                        if request.head_len > MAX_HEAD {
+                            return Ok(HeadOutcome::Reject(build_error_response(
+                                431,
+                                "Request Header Fields Too Large",
+                                "The request head exceeded NullAD's buffer limit.",
+                            )));
+                        }
+                        let prefix = buffer.split_off(request.head_len);
+                        return Ok(HeadOutcome::Request(Box::new(request), prefix));
+                    }
                     Ok(None) => {}
                     Err(err) => {
                         return Ok(HeadOutcome::Reject(build_error_response(
@@ -518,7 +713,11 @@ impl ProxyServer {
     }
 
     /// Establishes a blind tunnel for a `CONNECT` request.
-    async fn tunnel(&self, mut client: TcpStream, mut upstream: TcpStream) -> std::io::Result<()> {
+    async fn tunnel(
+        &self,
+        mut client: PrefixedIo<TcpStream>,
+        mut upstream: PrefixedIo<TcpStream>,
+    ) -> std::io::Result<()> {
         client
             .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
             .await?;
@@ -530,12 +729,31 @@ impl ProxyServer {
     /// Forwards a plaintext HTTP request and streams the response back.
     async fn forward(
         &self,
-        mut client: TcpStream,
-        mut upstream: TcpStream,
+        mut client: PrefixedIo<TcpStream>,
+        mut upstream: PrefixedIo<TcpStream>,
         request: &ProxyRequest,
         authority: &str,
     ) -> std::io::Result<()> {
-        let head = build_upstream_head(request, authority);
+        let head = if self
+            .config
+            .upstream
+            .as_ref()
+            .is_some_and(UpstreamProxy::uses_absolute_form)
+        {
+            let origin_head = build_upstream_head(request, authority);
+            let (_, headers) = origin_head
+                .split_once("\r\n")
+                .expect("generated request head");
+            let target = if request.method.eq_ignore_ascii_case("OPTIONS") && request.target == "*"
+            {
+                format!("http://{authority}")
+            } else {
+                request.url_for_filtering()
+            };
+            format!("{} {} HTTP/1.1\r\n{headers}", request.method, target)
+        } else {
+            build_upstream_head(request, authority)
+        };
         upstream.write_all(head.as_bytes()).await?;
         upstream.flush().await?;
 
@@ -544,13 +762,6 @@ impl ProxyServer {
         // absolute form.
         tokio::io::copy_bidirectional(&mut client, &mut upstream).await?;
         Ok(())
-    }
-
-    /// Returns the deciding rule for a URL, for reporting only.
-    fn explain(&self, url: &str) -> Option<String> {
-        let request = nullad_engine::Request::new(url, ResourceType::Other);
-        let result = self.handle.engine.check(&request);
-        result.matched_rule.as_ref().map(|r| r.raw.clone())
     }
 
     /// Returns `true` when an authority resolves to one of our own listeners.
@@ -564,7 +775,7 @@ impl ProxyServer {
         if port != self.config.listen.port() {
             return false;
         }
-        match host.parse::<std::net::IpAddr>() {
+        match host.trim_matches(['[', ']']).parse::<std::net::IpAddr>() {
             Ok(ip) => is_local_address(ip),
             Err(_) => matches!(host, "localhost" | "localhost.localdomain"),
         }
@@ -583,8 +794,36 @@ mod tests {
     }
 
     #[test]
+    fn server_options_preserves_asterisk_and_host() {
+        let origin = parse("OPTIONS * HTTP/1.1\r\nHost: example.com:8081\r\n\r\n");
+        assert_eq!(origin.url_for_filtering(), "http://example.com:8081/");
+        assert_eq!(
+            upstream_authority(&origin).as_deref(),
+            Some("example.com:8081")
+        );
+        assert!(
+            build_upstream_head(&origin, "example.com:8081").starts_with("OPTIONS * HTTP/1.1\r\n")
+        );
+        let absolute = parse("OPTIONS http://example.com:8081 HTTP/1.1\r\n\r\n");
+        assert!(build_upstream_head(&absolute, "example.com:8081")
+            .starts_with("OPTIONS * HTTP/1.1\r\n"));
+    }
+
+    #[test]
+    fn heuristic_block_page_does_not_claim_a_rule_match() {
+        let response =
+            build_effective_block_response(None, Some("heuristic_ad_host"), "adserver.example");
+        assert!(response.contains("NullAD detection: heuristic_ad_host"));
+        assert!(!response.contains("NullAD rule:"));
+        let rule_response = build_block_response(Some("path<script>"), "example.com");
+        assert!(rule_response.contains("path&lt;script&gt;"));
+    }
+
+    #[test]
     fn parses_absolute_form_request() {
-        let request = parse("GET http://ads.example.com/banner.gif HTTP/1.1\r\nHost: ads.example.com\r\n\r\n");
+        let request = parse(
+            "GET http://ads.example.com/banner.gif HTTP/1.1\r\nHost: ads.example.com\r\n\r\n",
+        );
         assert_eq!(request.method, "GET");
         assert_eq!(request.target, "http://ads.example.com/banner.gif");
         assert_eq!(request.host().as_deref(), Some("ads.example.com"));
@@ -596,7 +835,8 @@ mod tests {
 
     #[test]
     fn parses_connect_request() {
-        let request = parse("CONNECT ads.example.com:443 HTTP/1.1\r\nHost: ads.example.com:443\r\n\r\n");
+        let request =
+            parse("CONNECT ads.example.com:443 HTTP/1.1\r\nHost: ads.example.com:443\r\n\r\n");
         assert!(request.is_connect());
         assert_eq!(request.host().as_deref(), Some("ads.example.com"));
         assert_eq!(request.url_for_filtering(), "https://ads.example.com:443/");
@@ -637,10 +877,16 @@ mod tests {
 
     #[test]
     fn derives_upstream_authority_with_default_ports() {
-        let request = parse("GET http://ads.example.com/x HTTP/1.1\r\nHost: ads.example.com\r\n\r\n");
-        assert_eq!(upstream_authority(&request).as_deref(), Some("ads.example.com:80"));
+        let request =
+            parse("GET http://ads.example.com/x HTTP/1.1\r\nHost: ads.example.com\r\n\r\n");
+        assert_eq!(
+            upstream_authority(&request).as_deref(),
+            Some("ads.example.com:80")
+        );
 
-        let request = parse("GET http://ads.example.com:8080/x HTTP/1.1\r\nHost: ads.example.com:8080\r\n\r\n");
+        let request = parse(
+            "GET http://ads.example.com:8080/x HTTP/1.1\r\nHost: ads.example.com:8080\r\n\r\n",
+        );
         assert_eq!(
             upstream_authority(&request).as_deref(),
             Some("ads.example.com:8080")
@@ -700,13 +946,67 @@ mod tests {
         assert_eq!(request.resource_type(), ResourceType::Document);
 
         let request = parse("GET http://a.com/x.js HTTP/1.1\r\nAccept: */*\r\n\r\n");
-        assert_eq!(request.resource_type(), ResourceType::Other);
+        assert_eq!(request.resource_type(), ResourceType::Script);
 
         let request = parse("POST http://a.com/api HTTP/1.1\r\n\r\n");
         assert_eq!(request.resource_type(), ResourceType::Xhr);
 
         let request = parse("CONNECT a.com:443 HTTP/1.1\r\n\r\n");
         assert_eq!(request.resource_type(), ResourceType::Document);
+    }
+
+    #[test]
+    fn browser_destination_metadata_precedes_url_and_mime_hints() {
+        for (destination, resource) in [
+            ("document", ResourceType::Document),
+            ("iframe", ResourceType::Subdocument),
+            ("script", ResourceType::Script),
+            ("image", ResourceType::Image),
+            ("style", ResourceType::Stylesheet),
+            ("font", ResourceType::Font),
+            ("video", ResourceType::Media),
+            ("object", ResourceType::Object),
+            ("empty", ResourceType::Xhr),
+        ] {
+            let request = parse(&format!("GET http://a.com/x.js HTTP/1.1\r\nSec-Fetch-Dest: {destination}\r\nAccept: text/html\r\n\r\n"));
+            assert_eq!(request.resource_type(), resource, "{destination}");
+        }
+        let request = parse("GET http://a.com/x.js HTTP/1.1\r\nSec-Fetch-Mode: navigate\r\n\r\n");
+        assert_eq!(request.resource_type(), ResourceType::Document);
+        let request = parse("GET http://a.com/x HTTP/1.1\r\nSec-Fetch-Dest: empty\r\nSec-Fetch-Mode: websocket\r\n\r\n");
+        assert_eq!(request.resource_type(), ResourceType::Websocket);
+        let request =
+            parse("GET http://a.com/PIC.PNG?x=1 HTTP/1.1\r\nSec-Fetch-Dest: future-value\r\n\r\n");
+        assert_eq!(request.resource_type(), ResourceType::Image);
+        let request = parse("GET http://a.com/x HTTP/1.1\r\nAccept: */*\r\n\r\n");
+        assert_eq!(request.resource_type(), ResourceType::Other);
+    }
+
+    #[test]
+    fn initiating_context_requires_a_valid_referer_or_non_opaque_origin() {
+        let request = parse("GET http://a.com/x HTTP/1.1\r\nReferer: https://publisher.example/page\r\nOrigin: https://other.example\r\n\r\n");
+        assert_eq!(
+            request.page_for_filtering(),
+            Some("https://publisher.example/page")
+        );
+        let request = parse("GET http://a.com/x HTTP/1.1\r\nReferer: malformed\r\nOrigin: https://publisher.example\r\n\r\n");
+        assert_eq!(
+            request.page_for_filtering(),
+            Some("https://publisher.example")
+        );
+        for headers in [
+            "",
+            "Origin: null\r\n",
+            "Referer: https:///\r\n",
+            "Referer: https://a.com/has space\r\n",
+            "Sec-Fetch-Site: cross-site\r\n",
+        ] {
+            let request = parse(&format!("GET http://a.com/x HTTP/1.1\r\n{headers}\r\n"));
+            assert_eq!(request.page_for_filtering(), None, "{headers}");
+        }
+        let request =
+            parse("CONNECT a.com:443 HTTP/1.1\r\nReferer: https://publisher.example\r\n\r\n");
+        assert_eq!(request.page_for_filtering(), None);
     }
 
     #[test]

@@ -17,6 +17,10 @@
 //! change strands the user's configuration.
 
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+
+static JOURNAL_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 use crate::paths::journal_path;
 use crate::{HostError, Result};
@@ -83,6 +87,8 @@ impl JournalEntry {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ChangeJournal {
     entries: Vec<JournalEntry>,
+    #[serde(skip)]
+    path: Option<PathBuf>,
 }
 
 impl ChangeJournal {
@@ -92,51 +98,94 @@ impl ChangeJournal {
         Self::default()
     }
 
-    /// Loads the journal from disk, returning an empty one if absent.
+    /// Loads the journal from the normal per-user location.
     pub fn load() -> Result<Self> {
-        let path = journal_path()?;
-        if !path.exists() {
-            return Ok(Self::new());
-        }
-        let text = std::fs::read_to_string(&path)
-            .map_err(|e| HostError::Journal(format!("{}: {e}", path.display())))?;
-        serde_json::from_str(&text)
+        Self::load_at(journal_path()?)
+    }
+
+    /// Loads an explicitly located journal, allowing isolated recovery tests.
+    pub fn load_at(path: impl Into<PathBuf>) -> Result<Self> {
+        let _guard = JOURNAL_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Self::read_at(path.into())
+    }
+
+    fn read_at(path: PathBuf) -> Result<Self> {
+        let mut journal = if path.exists() {
+            let text = std::fs::read_to_string(&path)
+                .map_err(|e| HostError::Journal(format!("{}: {e}", path.display())))?;
+            serde_json::from_str::<Self>(&text)
+                .map_err(|e| HostError::Journal(format!("{}: {e}", path.display())))?
+        } else {
+            Self::new()
+        };
+        journal.path = Some(path);
+        Ok(journal)
+    }
+
+    /// Runs a complete read/change/write operation under the shared journal lock.
+    /// Reloading prevents adapters created earlier from overwriting another kind.
+    pub(crate) fn transaction<T>(
+        &mut self,
+        action: impl FnOnce(&mut Self) -> Result<T>,
+    ) -> Result<T> {
+        let _guard = JOURNAL_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let path = self.path.clone().map_or_else(journal_path, Ok)?;
+        let _file_lock = lock_journal(&path)?;
+        *self = Self::read_at(path)?;
+        action(self)
+    }
+
+    /// Saves a snapshot atomically. Application changes use transactions instead.
+    pub fn save(&self) -> Result<()> {
+        let _guard = JOURNAL_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let path = self.path.clone().map_or_else(journal_path, Ok)?;
+        let _file_lock = lock_journal(&path)?;
+        self.save_unlocked()
+    }
+
+    fn save_unlocked(&self) -> Result<()> {
+        let path = self.path.clone().map_or_else(journal_path, Ok)?;
+        let text = serde_json::to_vec_pretty(self)
+            .map_err(|e| HostError::Journal(format!("serialize: {e}")))?;
+        atomic_write(&path, &text)
             .map_err(|e| HostError::Journal(format!("{}: {e}", path.display())))
     }
 
-    /// Writes the journal to disk atomically.
-    pub fn save(&self) -> Result<()> {
-        let path = journal_path()?;
-        let temp = path.with_extension("json.tmp");
-        let text = serde_json::to_string_pretty(self)
-            .map_err(|e| HostError::Journal(format!("serialize: {e}")))?;
-
-        std::fs::write(&temp, text)
-            .map_err(|e| HostError::Journal(format!("{}: {e}", temp.display())))?;
-        std::fs::rename(&temp, &path)
-            .map_err(|e| HostError::Journal(format!("{}: {e}", path.display())))?;
-        Ok(())
-    }
-
-    /// Records a change and persists the journal.
-    ///
-    /// Call this *before* applying the change.
+    /// Records and persists a change, reloading other pending kinds first.
     pub fn record(&mut self, entry: JournalEntry) -> Result<()> {
+        self.transaction(|journal| journal.record_unlocked(entry))
+    }
+
+    pub(crate) fn record_unlocked(&mut self, entry: JournalEntry) -> Result<()> {
         self.entries.push(entry);
-        self.save()
+        self.save_unlocked()
     }
 
-    /// Removes and persists the removal of every entry of a kind, after those
-    /// changes were successfully reverted.
+    /// Removes a kind only after its system settings were restored successfully.
     pub fn clear_kind(&mut self, kind: JournalKind) -> Result<()> {
-        self.entries.retain(|entry| entry.kind != kind);
-        self.save()
+        self.transaction(|journal| journal.clear_kind_unlocked(kind))
     }
 
-    /// Removes every entry.
+    pub(crate) fn clear_kind_unlocked(&mut self, kind: JournalKind) -> Result<()> {
+        self.entries.retain(|entry| entry.kind != kind);
+        self.save_unlocked()
+    }
+
+    /// Explicitly removes all pending changes.
     pub fn clear(&mut self) -> Result<()> {
-        self.entries.clear();
-        self.save()
+        self.transaction(|journal| {
+            journal.entries.clear();
+            journal.save_unlocked()
+        })
     }
 
     /// Returns the recorded changes, oldest first.
@@ -155,6 +204,11 @@ impl ChangeJournal {
     #[must_use]
     pub fn latest(&self, kind: JournalKind) -> Option<&JournalEntry> {
         self.entries.iter().rev().find(|entry| entry.kind == kind)
+    }
+
+    /// The original baseline, including journals left with multiple legacy entries.
+    pub fn original(&self, kind: JournalKind) -> Option<&JournalEntry> {
+        self.entries.iter().find(|entry| entry.kind == kind)
     }
 
     /// Returns `true` when a change of this kind is still outstanding.
@@ -190,6 +244,61 @@ impl ChangeJournal {
             }
         }
     }
+}
+
+fn lock_journal(path: &Path) -> Result<std::fs::File> {
+    let lock_path = path.with_extension("json.lock");
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(|e| HostError::Journal(format!("{}: {e}", lock_path.display())))?;
+    file.lock()
+        .map_err(|e| HostError::Journal(format!("cannot lock {}: {e}", lock_path.display())))?;
+    Ok(file)
+}
+
+/// Writes in the destination directory and flushes before atomically replacing.
+pub fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+    let temp = path.with_extension(format!(
+        "tmp-{}-{}",
+        std::process::id(),
+        NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+    ));
+    let result = (|| {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(&temp, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    result
+}
+
+/// The result of restoring one category of recorded system changes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RestoreItem {
+    pub kind: JournalKind,
+    pub restored: bool,
+    pub error: Option<String>,
+}
+
+/// Recovery result shared by core, desktop and command callers.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RestoreReport {
+    pub items: Vec<RestoreItem>,
+    pub pending_changes: usize,
 }
 
 #[cfg(test)]
@@ -231,11 +340,17 @@ mod tests {
         ));
 
         assert_eq!(
-            journal.latest(JournalKind::DnsResolver).unwrap().description,
+            journal
+                .latest(JournalKind::DnsResolver)
+                .unwrap()
+                .description,
             "resolver pointed at NullAD"
         );
         assert_eq!(
-            journal.latest(JournalKind::SystemProxy).unwrap().description,
+            journal
+                .latest(JournalKind::SystemProxy)
+                .unwrap()
+                .description,
             "system proxy routed through NullAD"
         );
         assert_eq!(journal.pending_kinds().len(), 2);
@@ -279,7 +394,9 @@ mod tests {
             "resolver",
         ));
 
-        journal.entries.retain(|e| e.kind != JournalKind::SystemProxy);
+        journal
+            .entries
+            .retain(|e| e.kind != JournalKind::SystemProxy);
 
         assert!(!journal.has_pending(JournalKind::SystemProxy));
         assert!(journal.has_pending(JournalKind::DnsResolver));

@@ -1,18 +1,18 @@
-//! # NullAD Engine
+//! # `NullAD` Engine
 //!
 //! A pure, I/O-free ad-filtering engine.
 //!
 //! This crate contains the entire rule-parsing and request-matching core of
-//! NullAD. It deliberately depends on **no** async runtime, no sockets, no
+//! `NullAD`. It deliberately depends on **no** async runtime, no sockets, no
 //! filesystem, and no platform API. Everything it does is a pure function of
 //! `&self` plus an input request.
 //!
-//! That constraint is what makes NullAD's core reusable across the desktop GUI,
+//! That constraint is what makes `NullAD`'s core reusable across the desktop GUI,
 //! the headless CLI, and a future Android/iOS FFI binding without modification.
 //!
 //! ## 中文说明
 //!
-//! 本 crate 是 NullAD 的规则解析与请求匹配核心，**不依赖任何异步运行时、
+//! 本 crate 是 `NullAD` 的规则解析与请求匹配核心，**不依赖任何异步运行时、
 //! 套接字、文件系统或平台 API**。它的一切行为都是 `&self` 加一个输入请求的
 //! 纯函数。正是这个约束，让内核可以不加改动地复用于桌面 GUI、无界面 CLI，
 //! 以及未来的 Android/iOS FFI 绑定。
@@ -50,8 +50,8 @@
 #![warn(clippy::doc_markdown)]
 
 mod domain_trie;
-mod error;
 mod engine;
+mod error;
 mod parser;
 mod regex_index;
 pub mod request;
@@ -60,8 +60,9 @@ mod stats;
 mod substring_index;
 
 pub use domain_trie::DomainTrie;
+pub use engine::{CheckResult, FilterEngine, MatchScratch, RuleSet, RuleSetBuilder, RuleSetStats};
 pub use error::{EngineError, ParseFailure};
-pub use engine::{CheckResult, FilterEngine, MatchScratch, RuleSet, RuleSetBuilder, RuleSetStats};pub use parser::{ParseStats, RuleParser};
+pub use parser::{ParseStats, RuleParser};
 pub use regex_index::RegexIndex;
 pub use request::Request;
 pub use rule::{Action, ResourceType, Rule, RuleOptions, RuleOrigin};

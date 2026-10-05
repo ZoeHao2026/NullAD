@@ -1,0 +1,616 @@
+{
+  "browser": "Edge",
+  "grant": "isolated QA manifest grants the same optional host origins; native permission dialog not accepted or bypassed",
+  "runtimeSource": "same release JavaScript/CSS",
+  "personalBrowserChanged": false,
+  "results": [
+    {
+      "route": "direct",
+      "dom": {
+        "labelled": "none",
+        "empty": "none",
+        "normal": "block",
+        "protected": "block",
+        "shadow": "none",
+        "normalLoaded": 1,
+        "adsLoaded": false,
+        "pageadLoaded": false
+      },
+      "frameState": {
+        "ad": "none",
+        "normal": "block"
+      },
+      "blockedByClient": [
+        "http://127.0.0.1:56703/ads.js",
+        "http://127.0.0.1:56703/pagead.js"
+      ],
+      "popupErrors": [],
+      "restore": true,
+      "allow": true,
+      "stop": true
+    },
+    {
+      "route": "http",
+      "dom": {
+        "labelled": "none",
+        "empty": "none",
+        "normal": "block",
+        "protected": "block",
+        "shadow": "none",
+        "normalLoaded": 1,
+        "adsLoaded": false,
+        "pageadLoaded": false
+      },
+      "frameState": {
+        "ad": "none",
+        "normal": "block"
+      },
+      "blockedByClient": [
+        "http://proxy-fixture.invalid:56703/ads.js",
+        "http://proxy-fixture.invalid:56703/pagead.js"
+      ],
+      "popupErrors": [],
+      "restore": true,
+      "allow": true,
+      "stop": true
+    },
+    {
+      "route": "socks5",
+      "dom": {
+        "labelled": "none",
+        "empty": "none",
+        "normal": "block",
+        "protected": "block",
+        "shadow": "none",
+        "normalLoaded": 1,
+        "adsLoaded": false,
+        "pageadLoaded": false
+      },
+      "frameState": {
+        "ad": "none",
+        "normal": "block"
+      },
+      "blockedByClient": [
+        "http://proxy-fixture.invalid:56703/ads.js",
+        "http://proxy-fixture.invalid:56703/pagead.js"
+      ],
+      "popupErrors": [],
+      "restore": true,
+      "allow": true,
+      "stop": true
+    }
+  ],
+  "httpProxyObserved": 20,
+  "socksTargets": [
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 80
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "mss.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "mss.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "prod.rewardsplatform.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "prod.rewardsplatform.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "mss.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "mss.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "substrate.office.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "nav-edge.smartscreen.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "proxy-fixture.invalid",
+      "port": 56703
+    },
+    {
+      "type": 3,
+      "host": "edge.microsoft.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "www.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    },
+    {
+      "type": 3,
+      "host": "cn.bing.com",
+      "port": 443
+    }
+  ]
+}

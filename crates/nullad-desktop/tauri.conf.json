@@ -7,6 +7,7 @@
     "frontendDist": "../../ui"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",
@@ -22,17 +23,14 @@
     ],
     "security": {
       "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src ipc: http://ipc.localhost"
-    },
-    "trayIcon": {
-      "id": "main-tray",
-      "iconPath": "icons/tray.png",
-      "iconAsTemplate": false,
-      "tooltip": "NullAD"
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["msi", "nsis"],
+    "targets": [
+      "msi",
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -41,7 +39,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../../lists/*.txt": "lists/"
+      "../../lists/*.txt": "lists/",
+      "../../lists/THIRD_PARTY_NOTICES.md": "lists/THIRD_PARTY_NOTICES.md"
     },
     "shortDescription": "High-performance cross-platform ad blocker",
     "longDescription": "NullAD filters advertising and tracking at the DNS, connection and HTTP layers, driven by a pure-Rust rule engine with lock-free hot reloading."
