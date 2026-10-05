@@ -175,10 +175,24 @@ impl SystemProxy {
     /// Returns the state that was replaced, so a caller can restore it without
     /// consulting the journal.
     pub fn apply(&mut self) -> Result<ProxySettings> {
+        self.apply_internal(None)
+    }
+
+    /// Preserve an existing proxy route by requiring explicit upstream chaining.
+    /// PAC cannot be represented by a single static upstream, so browser-only
+    /// protection is required while a PAC route remains configured.
+    pub fn apply_chained(&mut self, upstream_configured: bool) -> Result<ProxySettings> {
+        self.apply_internal(Some(upstream_configured))
+    }
+
+    fn apply_internal(&mut self, upstream_configured: Option<bool>) -> Result<ProxySettings> {
         let backend = std::sync::Arc::clone(&self.backend);
         let listen = self.listen.clone();
         self.journal.transaction(|journal| {
             let previous = backend.read()?;
+            if upstream_configured.is_some() && previous.auto_config_url.as_deref().is_some_and(|url| !url.trim().is_empty()) {
+                return Err(HostError::Config("A PAC route is configured. Use the NullAD browser extension without system proxy takeover to preserve that route.".into()));
+            }
             if let Some(entry) = journal.original(JournalKind::SystemProxy) {
                 if previous.points_at(&listen) {
                     return entry.before_as().ok_or_else(|| {
@@ -192,7 +206,17 @@ impl SystemProxy {
             if previous.points_at(&listen) {
                 return Ok(previous);
             }
-            let desired = ProxySettings::routing_through(&listen);
+            if let Some(upstream_configured) = upstream_configured {
+                if previous.enabled && !upstream_configured {
+                    return Err(HostError::Config("An existing system proxy is enabled. Configure its HTTP/SOCKS5 endpoint as NullAD's upstream, or use the independent browser extension.".into()));
+                }
+            }
+            let mut desired = ProxySettings::routing_through(&listen);
+            if upstream_configured == Some(true) && previous.enabled {
+                // Keep the original direct/proxied destination split. Adding
+                // private-address bypasses here could bypass an existing route.
+                desired.bypass = previous.bypass.clone();
+            }
             journal.record_unlocked(JournalEntry::new(
                 JournalKind::SystemProxy,
                 serde_json::to_value(&previous).map_err(|e| HostError::Journal(e.to_string()))?,
@@ -262,6 +286,84 @@ impl SystemProxy {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Debug)]
+    struct MemoryBackend(std::sync::Mutex<ProxySettings>);
+    impl ProxyBackend for MemoryBackend {
+        fn read(&self) -> Result<ProxySettings> {
+            Ok(self.0.lock().unwrap().clone())
+        }
+        fn write(&self, value: &ProxySettings) -> Result<()> {
+            *self.0.lock().unwrap() = value.clone();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn existing_proxy_without_upstream_is_preserved_without_recovery_record() {
+        let original = ProxySettings {
+            bypass: Some("*.direct.invalid;<local>".into()),
+            ..ProxySettings::routing_through("127.0.0.1:7890")
+        };
+        let backend = std::sync::Arc::new(MemoryBackend(std::sync::Mutex::new(original.clone())));
+        let directory = crate::test_support::directory();
+        let mut proxy = SystemProxy::with_backend(
+            "127.0.0.1:8080".into(),
+            backend.clone(),
+            directory.join("journal.json"),
+        )
+        .unwrap();
+        assert!(proxy.apply_chained(false).is_err());
+        assert_eq!(backend.read().unwrap(), original);
+        assert!(proxy.pending().is_none());
+        // Explicit chaining allows takeover and exact restoration of the route.
+        proxy.apply_chained(true).unwrap();
+        assert!(backend.read().unwrap().points_at("127.0.0.1:8080"));
+        assert_eq!(backend.read().unwrap().bypass, original.bypass);
+        proxy.revert().unwrap();
+        assert_eq!(backend.read().unwrap(), original);
+    }
+
+    #[test]
+    fn chaining_does_not_add_private_bypasses_when_original_had_none() {
+        let original = ProxySettings {
+            bypass: None,
+            ..ProxySettings::routing_through("127.0.0.1:7890")
+        };
+        let backend = std::sync::Arc::new(MemoryBackend(std::sync::Mutex::new(original.clone())));
+        let directory = crate::test_support::directory();
+        let mut proxy = SystemProxy::with_backend(
+            "127.0.0.1:8080".into(),
+            backend.clone(),
+            directory.join("journal.json"),
+        )
+        .unwrap();
+        proxy.apply_chained(true).unwrap();
+        assert_eq!(backend.read().unwrap().bypass, None);
+        proxy.revert().unwrap();
+        assert_eq!(backend.read().unwrap(), original);
+    }
+
+    #[test]
+    fn pac_is_preserved_even_when_static_upstream_is_configured() {
+        let original = ProxySettings {
+            auto_config_url: Some("https://configuration.invalid/route.pac".into()),
+            ..ProxySettings::disabled()
+        };
+        let backend = std::sync::Arc::new(MemoryBackend(std::sync::Mutex::new(original.clone())));
+        let directory = crate::test_support::directory();
+        let mut proxy = SystemProxy::with_backend(
+            "127.0.0.1:8080".into(),
+            backend.clone(),
+            directory.join("journal.json"),
+        )
+        .unwrap();
+        for configured in [false, true] {
+            assert!(proxy.apply_chained(configured).is_err());
+        }
+        assert_eq!(backend.read().unwrap(), original);
+        assert!(proxy.pending().is_none());
+    }
 
     #[test]
     fn disabled_settings_describe_no_proxy() {

@@ -15,6 +15,19 @@ pub use nullad_engine::{
     Action, CheckResult, EngineStats, Request, ResourceType, RuleSetStats, StatsSnapshot,
 };
 
+/// Offline advertising detection strength, independent of subscribed lists.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HeuristicMode {
+    /// Evaluate filter rules only.
+    Off,
+    /// Detect dedicated advertising service hosts and the strongest HTTP patterns.
+    Conservative,
+    /// Also combine advertising paths, request type and initiating site.
+    #[default]
+    Balanced,
+}
+
 /// Current operational state of the protection engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -159,4 +172,55 @@ pub struct LogEntry {
     pub blocked: bool,
     /// The rule that decided the outcome, rendered as text.
     pub rule: Option<String>,
+    /// Stable policy explanation, distinct from a filter rule.
+    #[serde(default)]
+    pub reason: Option<String>,
+    /// Feature strength on a 0..100 scale; this is not a probability.
+    #[serde(default)]
+    pub score: Option<u8>,
+    /// Interceptor that observed the request.
+    #[serde(default)]
+    pub source: Option<String>,
+}
+
+#[cfg(test)]
+mod detection_tests {
+    use super::*;
+
+    #[test]
+    fn detection_modes_have_stable_serialized_names_and_balanced_default() {
+        assert_eq!(HeuristicMode::default(), HeuristicMode::Balanced);
+        for (mode, name) in [
+            (HeuristicMode::Off, "off"),
+            (HeuristicMode::Conservative, "conservative"),
+            (HeuristicMode::Balanced, "balanced"),
+        ] {
+            let encoded = serde_json::to_string(&mode).unwrap();
+            assert_eq!(encoded, format!("\"{name}\""));
+            assert_eq!(
+                serde_json::from_str::<HeuristicMode>(&encoded).unwrap(),
+                mode
+            );
+        }
+    }
+
+    #[test]
+    fn older_log_entries_remain_readable_and_heuristics_do_not_forge_a_rule() {
+        let old: LogEntry = serde_json::from_str(r#"{"timestamp_ms":0,"url":"http://example.com/","host":"example.com","blocked":false,"rule":null}"#).unwrap();
+        assert!(old.reason.is_none());
+        assert!(old.score.is_none());
+        assert!(old.source.is_none());
+        let heuristic = LogEntry {
+            reason: Some("heuristic_ad_host".into()),
+            score: Some(85),
+            source: Some("connect".into()),
+            blocked: true,
+            ..old
+        };
+        let encoded = serde_json::to_value(&heuristic).unwrap();
+        assert!(encoded["rule"].is_null());
+        assert_eq!(encoded["reason"], "heuristic_ad_host");
+        assert_eq!(encoded["score"], 85);
+        assert_eq!(encoded["source"], "connect");
+    }
 }

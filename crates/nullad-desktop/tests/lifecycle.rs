@@ -1,14 +1,20 @@
 use nullad_core::{AppHandle, AppSettings, AppState};
 use nullad_desktop_lib::{runtime, DesktopState};
-use std::net::TcpListener;
+use std::net::{TcpListener, UdpSocket};
 use std::sync::Arc;
 
 fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
+    // Windows may reserve a TCP-selected ephemeral port for UDP. Probe both
+    // transports before choosing the fixed fixture port; do not mistake that
+    // host reservation for a lifecycle failure.
+    for _ in 0..128 {
+        let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = tcp.local_addr().unwrap().port();
+        if UdpSocket::bind(("127.0.0.1", port)).is_ok() {
+            return port;
+        }
+    }
+    panic!("no loopback TCP/UDP fixture port available after 128 attempts");
 }
 
 /// One isolated process: never apply a real system setting in lifecycle tests.

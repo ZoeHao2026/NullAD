@@ -6,7 +6,34 @@ NullAD 是用 Rust 编写的广告与追踪拦截软件，提供桌面界面和�
 它在明文 HTTP、TLS 连接主机名和 DNS 查询三个层面过滤流量。
 匹配引擎不包含网络、文件系统或平台集成代码。
 
-## 当前验收状态
+## 无订阅识别与已有代理共存
+
+独立 Chrome/Edge 扩展提供 HTTP/HTTPS 资源拦截和可恢复的页面清理，
+不需要广告域名订阅或桌面服务。解压 `nullad-browser-extension.zip` 后，
+在扩展管理页“加载解压缩的扩展”，再从弹窗明确授权网页资源访问。
+扩展初始关闭，不修改代理、DNS、证书或请求头。桌面/CLI 另支持
+`--upstream-proxy` 显式串联无认证 HTTP/SOCKS5 端口，上游故障不会直连回退。
+已有系统代理需填写上游才能接管；使用独立扩展可保留 PAC 的动态路由。
+
+目标测试站在零订阅下，两项元素隐藏和两项脚本检查全部通过；关闭→平衡→关闭
+的结果是 **16→30→16 /132**。另一次将原有 232 条内置规则、扩展和当前 HTTP
+代理串联，结果为 **60/132**。总分包含独立网络故障，**尚未拦截全部广告，也未验收
+所有代理软件版本**。Edge 直连/HTTP/SOCKS5 本地夹具通过；原生可选权限弹窗和
+Chrome 扩展运行仍为 Unknown。详见 [使用与边界](docs/no-subscription.md)、
+[本轮验收](docs/heuristic-validation.md)、[实际性能成本](docs/performance.md)。
+
+```powershell
+node --test extension/tests/*.test.cjs
+.\target\release\nullad-cli.exe check http://ads.vendor.example/ad-loader.js --no-lists --heuristic balanced --type script
+.\target\release\nullad-cli.exe serve --no-lists --upstream-proxy http://127.0.0.1:7890
+```
+
+上游端口只是示例，请填写代理软件提供的实际端口。桌面/CLI 默认平衡识别，可关闭。
+“无订阅”仍包含打包的通用语义条件；广覆盖的维护规则能补充识别范围。
+
+## 历史 Windows 验收（新增识别前）
+
+下表对应运行代码 5ac216b、文档提交 422eb53。本轮检查与新交付包单独记录于上述验收。
 
 | 范围 | 结果与证据 |
 |---|---|
@@ -85,7 +112,7 @@ NullAD-cli/
 CLI 优先查找 `./lists`，随后查找可执行文件旁的 `lists`。
 也可以重复使用 `--list <PATH>` 指定列表。
 桌面便携 ZIP、CLI ZIP 与 NSIS 安装包由 `scripts/package-windows.ps1` 生成，
-同时生成 SHA256SUMS.txt；三种交付物需分别验证启动。
+另含独立浏览器扩展 ZIP，同时生成 SHA256SUMS.txt；各交付物需分别验证启动。
 
 ## 使用
 
@@ -146,7 +173,8 @@ Windows 还可使用 `NULLAD_WEBVIEW_DATA_DIR` 隔离 WebView2 用户数据。
 引擎处理资源类型、第三方、域名、大小写匹配和 important 选项。
 通常例外优先于拦截；important 拦截规则优先于非 important 例外。
 
-装饰性规则会被识别和计数，但不会隐藏页面元素。
+原生引擎识别/计数装饰性规则，但不应用它们。独立扩展通过本地语义 DOM 检测隐藏元素，
+不导入 ABP 装饰性订阅。
 `$csp`、`$redirect` 和 `$removeparam` 内容由解析器保留，拦截器不执行这些行为。
 
 畸形规则会隔离处理。桌面加载器用实际列表 ID 解析一次，并复用 HTTP 客户端。
@@ -180,7 +208,8 @@ macOS 与 Linux 当前**尚未通过自动系统配置的发布验收**：
   重写普通 `resolv.conf` 不能保留全部原始指令，托管符号链接会被拒绝。
   尚未实现 NetworkManager/systemd-resolved 集成。
 
-移动端二进制、HTTPS URL 检查和页面元素隐藏不在当前实现范围内。
+移动端二进制与原生 HTTPS 解密不在当前范围。浏览器资源拦截与页面清理由独立扩展提供，
+适用上述能力边界。
 
 ## 测试与性能
 

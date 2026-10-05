@@ -60,6 +60,12 @@ pub async fn start(state: &DesktopState) -> Result<Vec<String>, String> {
                 ProxyServer::bind(
                     ProxyConfig {
                         listen: ([127, 0, 0, 1], settings.proxy_port).into(),
+                        upstream: settings
+                            .upstream_proxy
+                            .as_deref()
+                            .map(str::parse)
+                            .transpose()
+                            .map_err(|error| format!("Upstream proxy: {error}"))?,
                         ..ProxyConfig::default()
                     },
                     handle.clone(),
@@ -124,9 +130,10 @@ pub async fn start(state: &DesktopState) -> Result<Vec<String>, String> {
         if settings.intercept_system_proxy {
             system_attempted = true;
             let port = settings.proxy_port;
+            let upstream_configured = settings.upstream_proxy.is_some();
             tauri::async_runtime::spawn_blocking(move || {
                 let mut proxy = nullad_host::SystemProxy::new(format!("127.0.0.1:{port}"))?;
-                proxy.apply()
+                proxy.apply_chained(upstream_configured)
             })
             .await
             .map_err(|e| e.to_string())?

@@ -25,12 +25,12 @@ pub mod state;
 pub mod updater;
 
 pub use nullad_host::{RestoreItem, RestoreReport};
-pub use settings::{AppSettings, ListEntry, ListSource, SettingsPatch};
+pub use settings::{normalize_allowed_hosts, AppSettings, ListEntry, ListSource, SettingsPatch};
 pub use state::{AppHandle, AppState, ProtectionStatus, RunningProtection};
 pub use updater::{ListLoader, LoadOutcome};
 
 /// Re-exported so a UI crate only needs to depend on `nullad-core`.
-pub use nullad_api::{FilterListInfo, LogEntry, ProtectionState, StatusReport};
+pub use nullad_api::{FilterListInfo, HeuristicMode, LogEntry, ProtectionState, StatusReport};
 pub use nullad_api::{RuleSetStatsDto, StatsSnapshotDto};
 
 #[cfg(test)]

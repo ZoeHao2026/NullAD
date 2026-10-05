@@ -1,0 +1,70 @@
+{
+  "browser": "isolated Edge",
+  "lists": 232,
+  "route": "browser -> NullAD HTTP -> existing loopback HTTP proxy software",
+  "systemProxyChanged": false,
+  "proxySelectorsChanged": false,
+  "grant": "QA-only static origins, production runtime code",
+  "total": 132,
+  "blocked": 60,
+  "unblocked": 72,
+  "cosmetic": {
+    "static": true,
+    "dynamic": true
+  },
+  "scripts": {
+    "ads": true,
+    "pagead": true
+  },
+  "blockedByClient": [
+    {
+      "url": "https://adblock.turtlecute.org/js/widget/ads.js",
+      "error": "net::ERR_BLOCKED_BY_CLIENT"
+    },
+    {
+      "url": "https://adblock.turtlecute.org/js/pagead.js",
+      "error": "net::ERR_BLOCKED_BY_CLIENT"
+    },
+    {
+      "url": "https://adservice.google.com/fakepage.html",
+      "error": "net::ERR_BLOCKED_BY_CLIENT"
+    },
+    {
+      "url": "https://ads.linkedin.com/fakepage.html",
+      "error": "net::ERR_BLOCKED_BY_CLIENT"
+    },
+    {
+      "url": "https://ads.pinterest.com/fakepage.html",
+      "error": "net::ERR_BLOCKED_BY_CLIENT"
+    },
+    {
+      "url": "https://ads.youtube.com/fakepage.html",
+      "error": "net::ERR_BLOCKED_BY_CLIENT"
+    },
+    {
+      "url": "https://ads.tiktok.com/fakepage.html",
+      "error": "net::ERR_BLOCKED_BY_CLIENT"
+    },
+    {
+      "url": "https://ads.yahoo.com/fakepage.html",
+      "error": "net::ERR_BLOCKED_BY_CLIENT"
+    },
+    {
+      "url": "https://adserver.unityads.unity3d.com/fakepage.html",
+      "error": "net::ERR_BLOCKED_BY_CLIENT"
+    },
+    {
+      "url": "https://adx.ads.oppomobile.com/fakepage.html",
+      "error": "net::ERR_BLOCKED_BY_CLIENT"
+    },
+    {
+      "url": "https://ck.ads.oppomobile.com/fakepage.html",
+      "error": "net::ERR_BLOCKED_BY_CLIENT"
+    },
+    {
+      "url": "https://data.ads.oppomobile.com/fakepage.html",
+      "error": "net::ERR_BLOCKED_BY_CLIENT"
+    }
+  ],
+  "limits": "Single run, total also includes independent network failures; not universal proxy compatibility or attribution of every blocked test."
+}

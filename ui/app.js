@@ -4,7 +4,7 @@
   const { ipc, state: helpers, i18n, views: v } = root.NullAD;
   const { $ } = v;
   const t = i18n.t;
-  const fieldIds = { proxy_enabled:"set-proxy-enabled", proxy_port:"set-proxy-port", dns_enabled:"set-dns-enabled", dns_port:"set-dns-port", dns_upstream:"set-dns-upstream", dns_nxdomain:"set-dns-nxdomain", intercept_system_proxy:"set-system-proxy" };
+  const fieldIds = { proxy_enabled:"set-proxy-enabled", proxy_port:"set-proxy-port", dns_enabled:"set-dns-enabled", dns_port:"set-dns-port", dns_upstream:"set-dns-upstream", dns_nxdomain:"set-dns-nxdomain", intercept_system_proxy:"set-system-proxy", heuristic_mode:"set-heuristic-mode", allowed_hosts:"set-allowed-hosts", upstream_proxy:"set-upstream-proxy" };
   let status = null, decisions = null, lists = null, parsedRules = null;
   let savedSettings = null, platform = null, benchmark = null, checkResult = null;
   let activeView = "dashboard", filter = "all", customDirty = false, customLoaded = false;
@@ -235,7 +235,7 @@
     if (settingsPending || !savedSettings) return;
     const patch = currentPatch(), invalid = helpers.validate(patch);
     if (invalid) { setFeedback("settings-status", invalid, "error"); toastKey(invalid, "warn"); return; }
-    settingsPending = true; $("settings-form").querySelectorAll("input").forEach((el) => el.disabled = true);
+    settingsPending = true; $("settings-form").querySelectorAll("input, select, textarea").forEach((el) => el.disabled = true);
     syncSettingsControls(); setFeedback("settings-status", "saving");
     try {
       const saved = await ipc.call("update_settings", { patch:helpers.settingsDelta(savedSettings, patch) });
@@ -246,7 +246,7 @@
     } catch (error) { setErrorFeedback("settings-status", error); showError(error); }
     finally {
       settingsPending = false;
-      $("settings-form").querySelectorAll("input").forEach((el) => el.disabled = !ipc.available);
+      $("settings-form").querySelectorAll("input, select, textarea").forEach((el) => el.disabled = !ipc.available);
       syncSettingsControls();
     }
   });

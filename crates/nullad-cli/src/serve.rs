@@ -10,26 +10,43 @@ use anyhow::{bail, Context, Result};
 use nullad_engine::FilterEngine;
 use nullad_host::SystemProxy;
 use nullad_intercept::dns::resolve_upstream;
-use nullad_intercept::{DnsConfig, DnsServer, EngineHandle, ProxyConfig, ProxyServer};
+use nullad_intercept::{
+    DetectionPolicy, DnsConfig, DnsServer, EngineHandle, ProxyConfig, ProxyServer, UpstreamProxy,
+};
+
+/// Listener and policy options for the headless process.
+#[derive(Debug)]
+pub struct ServeOptions {
+    pub proxy_port: u16,
+    pub dns_port: Option<u16>,
+    pub dns_upstream: String,
+    pub system_proxy: bool,
+    pub policy: DetectionPolicy,
+    pub upstream: Option<UpstreamProxy>,
+}
 
 /// Starts the requested interceptors and runs until interrupted.
-pub fn run(
-    engine: Arc<FilterEngine>,
-    proxy_port: u16,
-    dns_port: Option<u16>,
-    dns_upstream: &str,
-    system_proxy: bool,
-) -> Result<()> {
+pub fn run(engine: Arc<FilterEngine>, options: ServeOptions) -> Result<()> {
+    let ServeOptions {
+        proxy_port,
+        dns_port,
+        dns_upstream,
+        system_proxy,
+        policy,
+        upstream,
+    } = options;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .context("failed to start the async runtime")?;
 
     runtime.block_on(async move {
-        let handle = EngineHandle::new(engine);
+        let handle = EngineHandle::new(engine).with_policy(policy);
 
+        let upstream_configured = upstream.is_some();
         let proxy_config = ProxyConfig {
             listen: format!("127.0.0.1:{proxy_port}").parse()?,
+            upstream,
             ..ProxyConfig::default()
         };
 
@@ -49,7 +66,7 @@ pub fn run(
         }
 
         let dns = if let Some(port) = dns_port {
-            let upstream = resolve_upstream(dns_upstream)
+            let upstream = resolve_upstream(&dns_upstream)
                 .ok_or_else(|| anyhow::anyhow!("invalid DNS upstream `{dns_upstream}`"))?;
             let config = DnsConfig {
                 listen: format!("127.0.0.1:{port}").parse()?,
@@ -107,7 +124,7 @@ pub fn run(
 
         let mut result = match system_adapter.as_mut() {
             Some(adapter) => adapter
-                .apply()
+                .apply_chained(upstream_configured)
                 .map(|_| println!("system proxy routed through {bound}; previous settings journaled"))
                 .context("failed to apply the system proxy"),
             None => Ok(()),

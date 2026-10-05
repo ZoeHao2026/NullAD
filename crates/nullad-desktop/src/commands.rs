@@ -119,8 +119,12 @@ pub fn check_url(
         request = request.with_page(page);
     }
 
-    let mut scratch = MatchScratch::new();
-    let result = state.app.state().engine.check_with(&request, &mut scratch);
+    let result = state.app.state().engine_handle().evaluate(
+        &request.url,
+        kind,
+        page.as_deref(),
+        nullad_intercept::DecisionSource::Proxy,
+    );
 
     CheckOutcomeDto {
         url: request.url.clone(),
@@ -128,6 +132,8 @@ pub fn check_url(
         blocked: result.blocked,
         rule: result.matched_rule.as_ref().map(|r| r.raw.clone()),
         matched: result.matched_rule_ids.len(),
+        reason: result.reason,
+        score: result.score,
     }
 }
 
@@ -595,6 +601,10 @@ pub struct CheckOutcomeDto {
     pub rule: Option<String>,
     /// How many rules matched in total.
     pub matched: usize,
+    /// Decision reason, including offline advertising features and explicit allow hosts.
+    pub reason: Option<String>,
+    /// Feature strength, not a probability.
+    pub score: Option<u8>,
 }
 
 /// The outcome of a list reload.

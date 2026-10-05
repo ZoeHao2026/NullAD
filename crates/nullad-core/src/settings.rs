@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use nullad_api::HeuristicMode;
+use nullad_intercept::{DetectionPolicy, UpstreamProxy};
 use serde::{Deserialize, Serialize};
 
 use nullad_host::journal::ChangeJournal;
@@ -50,6 +52,13 @@ impl ListSource {
 pub struct AppSettings {
     /// Enabled filter lists.
     pub lists: Vec<ListEntry>,
+
+    /// Offline advertising detection, independent of filter lists.
+    pub heuristic_mode: HeuristicMode,
+    /// Explicit domains and their subdomains always allowed by the policy.
+    pub allowed_hosts: Vec<String>,
+    /// Optional HTTP/SOCKS5 route used by the local HTTP proxy.
+    pub upstream_proxy: Option<String>,
 
     /// Port the HTTP proxy listens on.
     pub proxy_port: u16,
@@ -114,6 +123,9 @@ impl Default for AppSettings {
                     enabled: true,
                 },
             ],
+            heuristic_mode: HeuristicMode::Balanced,
+            allowed_hosts: Vec::new(),
+            upstream_proxy: None,
             proxy_port: 8080,
             proxy_enabled: true,
             dns_port: 5353,
@@ -170,8 +182,37 @@ impl AppSettings {
             .map_err(|e| nullad_host::HostError::Config(format!("{}: {e}", path.display())))
     }
 
+    /// Canonicalizes user input before persistence and policy publication.
+    pub fn normalize(&mut self) -> Result<(), nullad_host::HostError> {
+        self.allowed_hosts = normalize_allowed_hosts(&self.allowed_hosts)?;
+        self.upstream_proxy = self
+            .upstream_proxy
+            .take()
+            .and_then(|value| (!value.trim().is_empty()).then(|| value.trim().to_owned()));
+        Ok(())
+    }
+
+    /// The policy shared by all interceptors, also available before startup.
+    #[must_use]
+    pub fn detection_policy(&self) -> DetectionPolicy {
+        DetectionPolicy {
+            mode: self.heuristic_mode,
+            allowed_hosts: self.allowed_hosts.clone(),
+        }
+    }
+
     /// Validates a proposed configuration before it can be published.
     pub fn validate(&self) -> Result<(), nullad_host::HostError> {
+        normalize_allowed_hosts(&self.allowed_hosts)?;
+        if let Some(value) = self
+            .upstream_proxy
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            value
+                .parse::<UpstreamProxy>()
+                .map_err(nullad_host::HostError::Config)?;
+        }
         if !matches!(self.ui_language.as_str(), "zh-CN" | "en") {
             return Err(nullad_host::HostError::Config(
                 "ui_language must be zh-CN or en".into(),
@@ -199,6 +240,7 @@ impl AppSettings {
     pub fn same_listener_settings(&self, other: &Self) -> bool {
         self.proxy_port == other.proxy_port
             && self.proxy_enabled == other.proxy_enabled
+            && self.upstream_proxy == other.upstream_proxy
             && self.dns_port == other.dns_port
             && self.dns_enabled == other.dns_enabled
             && self.dns_upstream == other.dns_upstream
@@ -245,6 +287,10 @@ impl AppSettings {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SettingsPatch {
+    pub heuristic_mode: Option<HeuristicMode>,
+    pub allowed_hosts: Option<Vec<String>>,
+    /// An empty string clears the upstream; an omitted field preserves it.
+    pub upstream_proxy: Option<String>,
     pub proxy_port: Option<u16>,
     pub proxy_enabled: Option<bool>,
     pub dns_port: Option<u16>,
@@ -267,6 +313,11 @@ impl SettingsPatch {
                 }
             };
         }
+        field!(heuristic_mode);
+        field!(allowed_hosts);
+        if let Some(value) = self.upstream_proxy {
+            settings.upstream_proxy = (!value.trim().is_empty()).then(|| value.trim().to_owned());
+        }
         field!(proxy_port);
         field!(proxy_enabled);
         field!(dns_port);
@@ -279,6 +330,59 @@ impl SettingsPatch {
         field!(log_level);
         field!(ui_language);
     }
+}
+
+/// Validates bare hosts, normalizes IDNA/case/trailing dots, and removes duplicates.
+/// Hostnames include subdomains; IP literals remain exact matches.
+pub fn normalize_allowed_hosts(hosts: &[String]) -> Result<Vec<String>, nullad_host::HostError> {
+    let mut normalized = Vec::new();
+    for value in hosts {
+        let value = value.trim();
+        if value.is_empty() {
+            continue;
+        }
+        let literal = value
+            .strip_prefix('[')
+            .and_then(|value| value.strip_suffix(']'))
+            .unwrap_or(value);
+        let ip = literal.parse::<std::net::IpAddr>().ok();
+        let host = if let Some(ip) = ip {
+            match ip {
+                std::net::IpAddr::V4(ip) => ip.to_string(),
+                std::net::IpAddr::V6(ip) => format!("[{ip}]"),
+            }
+        } else {
+            if value.contains(['/', '?', '#', '@', '*', ':'])
+                || value.chars().any(char::is_whitespace)
+            {
+                return Err(nullad_host::HostError::Config(
+                    "allowed_hosts requires bare domains or IP addresses".into(),
+                ));
+            }
+            let host = nullad_engine::request::extract_host(value)
+                .ok_or_else(|| nullad_host::HostError::Config("invalid allowed host".into()))?;
+            if host.len() > 253
+                || host.split('.').any(|label| {
+                    label.is_empty()
+                        || label.len() > 63
+                        || label.starts_with('-')
+                        || label.ends_with('-')
+                        || !label
+                            .bytes()
+                            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+                })
+            {
+                return Err(nullad_host::HostError::Config(
+                    "invalid allowed domain".into(),
+                ));
+            }
+            host
+        };
+        if !normalized.contains(&host) {
+            normalized.push(host);
+        }
+    }
+    Ok(normalized)
 }
 
 #[cfg(test)]
@@ -331,6 +435,68 @@ mod tests {
             .describe(),
             "http://x/a.txt"
         );
+    }
+
+    #[test]
+    fn policy_defaults_and_patches_are_backward_compatible() {
+        let mut settings: AppSettings = serde_json::from_str(r#"{"proxy_port":9090}"#).unwrap();
+        assert_eq!(settings.heuristic_mode, HeuristicMode::Balanced);
+        assert!(settings.allowed_hosts.is_empty());
+        assert_eq!(settings.upstream_proxy, None);
+        settings.upstream_proxy = Some("http://127.0.0.1:7890".into());
+        let patch: SettingsPatch = serde_json::from_str(r#"{"heuristic_mode":"off","allowed_hosts":["EXAMPLE.com.","例え.jp"],"upstream_proxy":""}"#).unwrap();
+        patch.apply_to(&mut settings);
+        settings.normalize().unwrap();
+        settings.validate().unwrap();
+        assert_eq!(settings.heuristic_mode, HeuristicMode::Off);
+        assert_eq!(settings.allowed_hosts, ["example.com", "xn--r8jz45g.jp"]);
+        assert_eq!(settings.upstream_proxy, None);
+    }
+
+    #[test]
+    fn policy_edits_do_not_require_listener_restart_but_upstream_does() {
+        let original = AppSettings::default();
+        let mut edited = original.clone();
+        edited.heuristic_mode = HeuristicMode::Off;
+        edited.allowed_hosts.push("example.com".into());
+        assert!(original.same_listener_settings(&edited));
+        edited.upstream_proxy = Some("socks5://127.0.0.1:7890".into());
+        assert!(!original.same_listener_settings(&edited));
+    }
+
+    #[test]
+    fn host_normalization_rejects_urls_ports_and_wildcards() {
+        for invalid in [
+            "https://example.com",
+            "example.com/path",
+            "*.example.com",
+            "example.com:80",
+            "bad domain",
+            "-bad.example",
+        ] {
+            assert!(
+                normalize_allowed_hosts(&[invalid.into()]).is_err(),
+                "{invalid}"
+            );
+        }
+        assert_eq!(
+            normalize_allowed_hosts(&[
+                "EXAMPLE.com.".into(),
+                "example.com".into(),
+                "::1".into(),
+                "[::1]".into()
+            ])
+            .unwrap(),
+            ["example.com", "[::1]"]
+        );
+        let mut settings = AppSettings {
+            upstream_proxy: Some("http://user:pass@example.com:80".into()),
+            ..AppSettings::default()
+        };
+        assert!(settings.validate().is_err());
+        settings.upstream_proxy = Some("  ".into());
+        settings.normalize().unwrap();
+        assert_eq!(settings.upstream_proxy, None);
     }
 
     #[test]

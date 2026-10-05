@@ -32,6 +32,7 @@ use nullad_engine::ResourceType;
 
 use crate::lifecycle::{stop_children, stopped};
 use crate::prefixed::PrefixedIo;
+use crate::upstream::{split_authority, UpstreamProxy};
 use crate::{is_local_address, DecisionSource, EngineHandle};
 
 /// Maximum bytes of request head we will buffer.
@@ -51,6 +52,8 @@ pub struct ProxyConfig {
     pub head_timeout: Duration,
     /// How long to wait for an upstream connection.
     pub connect_timeout: Duration,
+    /// Explicit route through an existing proxy. None connects directly.
+    pub upstream: Option<UpstreamProxy>,
 }
 
 impl Default for ProxyConfig {
@@ -59,6 +62,7 @@ impl Default for ProxyConfig {
             listen: "127.0.0.1:8080".parse().expect("valid literal address"),
             head_timeout: HEAD_TIMEOUT,
             connect_timeout: CONNECT_TIMEOUT,
+            upstream: None,
         }
     }
 }
@@ -114,14 +118,16 @@ impl ProxyRequest {
     #[must_use]
     pub fn host(&self) -> Option<String> {
         if self.is_connect() {
-            let host = self.target.split(':').next()?;
-            return (!host.is_empty()).then(|| host.to_ascii_lowercase());
+            return split_authority(self.target.trim())
+                .ok()
+                .map(|(host, _)| host);
         }
         if self.target.contains("://") {
             return nullad_engine::request::extract_host(&self.target);
         }
-        self.header("host")
-            .map(|h| h.split(':').next().unwrap_or(h).trim().to_ascii_lowercase())
+        self.header("host").and_then(|host| {
+            nullad_engine::request::extract_host(&format!("http://{}/", host.trim()))
+        })
     }
 
     /// Returns the URL to evaluate for filtering.
@@ -133,11 +139,16 @@ impl ProxyRequest {
             self.target.clone()
         } else {
             let host = self.header("host").unwrap_or_default();
-            format!("http://{host}{}", self.target)
+            let path = if self.target == "*" {
+                "/"
+            } else {
+                &self.target
+            };
+            format!("http://{host}{path}")
         }
     }
 
-    /// Guesses the resource type from the method and accept headers.
+    /// Reads browser destination metadata, then falls back to MIME/URL hints.
     ///
     /// This is necessarily approximate: only a browser knows the real
     /// destination type. `Xhr` is used for non-document methods and `Document`
@@ -148,13 +159,97 @@ impl ProxyRequest {
         if self.is_connect() {
             return ResourceType::Document;
         }
+        if let Some(destination) = self.header("sec-fetch-dest") {
+            let resource = match destination.trim() {
+                "document" => Some(ResourceType::Document),
+                "iframe" | "frame" => Some(ResourceType::Subdocument),
+                "script" | "worker" | "sharedworker" | "serviceworker" => {
+                    Some(ResourceType::Script)
+                }
+                "image" => Some(ResourceType::Image),
+                "style" => Some(ResourceType::Stylesheet),
+                "font" => Some(ResourceType::Font),
+                "audio" | "video" | "track" => Some(ResourceType::Media),
+                "object" | "embed" => Some(ResourceType::Object),
+                "empty" if self.header("sec-fetch-mode") == Some("websocket") => {
+                    Some(ResourceType::Websocket)
+                }
+                "empty" => Some(ResourceType::Xhr),
+                _ => None,
+            };
+            if let Some(resource) = resource {
+                return resource;
+            }
+        }
+        if self.header("sec-fetch-mode") == Some("navigate") {
+            return ResourceType::Document;
+        }
+        let accept = self
+            .header("accept")
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if accept.contains("text/html") || accept.contains("application/xhtml+xml") {
+            return ResourceType::Document;
+        }
+        if accept.contains("image/") {
+            return ResourceType::Image;
+        }
+        if accept.contains("text/css") {
+            return ResourceType::Stylesheet;
+        }
+        if accept.contains("javascript") {
+            return ResourceType::Script;
+        }
+        let path = self
+            .target
+            .split(['?', '#'])
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if path.ends_with(".js") || path.ends_with(".mjs") {
+            return ResourceType::Script;
+        }
+        if path.ends_with(".css") {
+            return ResourceType::Stylesheet;
+        }
+        if [".png", ".gif", ".jpg", ".jpeg", ".webp", ".svg", ".ico"]
+            .iter()
+            .any(|suffix| path.ends_with(suffix))
+        {
+            return ResourceType::Image;
+        }
+        if [".woff", ".woff2", ".ttf", ".otf"]
+            .iter()
+            .any(|suffix| path.ends_with(suffix))
+        {
+            return ResourceType::Font;
+        }
+        if [".mp4", ".webm", ".mp3", ".ogg", ".m4a"]
+            .iter()
+            .any(|suffix| path.ends_with(suffix))
+        {
+            return ResourceType::Media;
+        }
         match self.method.to_ascii_uppercase().as_str() {
-            "GET" | "HEAD" => match self.header("accept") {
-                Some(accept) if accept.contains("text/html") => ResourceType::Document,
-                _ => ResourceType::Other,
-            },
+            "GET" | "HEAD" => ResourceType::Other,
             _ => ResourceType::Xhr,
         }
+    }
+
+    /// Uses only a valid HTTP(S) Referer or Origin as initiating context.
+    /// Missing or opaque origins stay unknown; CONNECT has no page context.
+    #[must_use]
+    pub fn page_for_filtering(&self) -> Option<&str> {
+        if self.is_connect() {
+            return None;
+        }
+        ["referer", "origin"].iter().find_map(|name| {
+            let value = self.header(name)?.trim();
+            ((value.starts_with("http://") || value.starts_with("https://"))
+                && !value.chars().any(char::is_whitespace)
+                && nullad_engine::request::extract_host(value).is_some())
+            .then_some(value)
+        })
     }
 }
 
@@ -207,39 +302,36 @@ pub fn parse_request_head(buffer: &[u8]) -> Result<Option<ProxyRequest>, String>
 /// URL omits it.
 #[must_use]
 pub fn upstream_authority(request: &ProxyRequest) -> Option<String> {
-    if request.is_connect() {
-        let authority = request.target.trim();
-        if authority.is_empty() {
-            return None;
-        }
-        // CONNECT always includes the port.
-        return Some(authority.to_owned());
-    }
-
-    let host = request.host()?;
-    let port = if let Some(after) = request.target.split("://").nth(1) {
-        let authority = after.split('/').next().unwrap_or_default();
-        if let Some(colon) = authority.rfind(':') {
-            authority[colon + 1..].parse::<u16>().ok()
+    let (authority, default_port) = if request.is_connect() {
+        (request.target.trim(), None)
+    } else if let Some((scheme, rest)) = request.target.split_once("://") {
+        let port = if scheme.eq_ignore_ascii_case("http") {
+            80
+        } else if scheme.eq_ignore_ascii_case("https") {
+            443
         } else {
-            None
-        }
+            return None;
+        };
+        (rest.split(['/', '?', '#']).next()?, Some(port))
     } else {
-        request
-            .header("host")
-            .and_then(|h| h.rsplit_once(':'))
-            .and_then(|(_, port)| port.parse::<u16>().ok())
+        (request.header("host")?.trim(), Some(80))
     };
-
-    let scheme = request
-        .target
-        .split("://")
-        .next()
-        .unwrap_or("http")
-        .to_ascii_lowercase();
-    let default_port = if scheme == "https" { 443 } else { 80 };
-
-    Some(format!("{host}:{}", port.unwrap_or(default_port)))
+    let needs_port = if authority.starts_with('[') {
+        authority.ends_with(']')
+    } else {
+        !authority.contains(':')
+    };
+    let normalized = if needs_port {
+        format!("{authority}:{}", default_port?)
+    } else {
+        authority.to_owned()
+    };
+    let (host, port) = split_authority(&normalized).ok()?;
+    Some(if host.contains(':') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    })
 }
 
 /// Builds the origin-form request head to send upstream.
@@ -251,8 +343,10 @@ pub fn build_upstream_head(request: &ProxyRequest, authority: &str) -> String {
     let path = if request.target.contains("://") {
         // Strip scheme and authority, keeping the path and query.
         match request.target.split_once("://") {
-            Some((_, rest)) => match rest.find('/') {
+            Some((_, rest)) => match rest.find(['/', '?']) {
+                Some(query) if rest.as_bytes()[query] == b'?' => format!("/{}", &rest[query..]),
                 Some(slash) => rest[slash..].to_owned(),
+                None if request.method.eq_ignore_ascii_case("OPTIONS") => "*".to_owned(),
                 None => "/".to_owned(),
             },
             None => request.target.clone(),
@@ -301,14 +395,35 @@ pub fn build_upstream_head(request: &ProxyRequest, authority: &str) -> String {
 /// Builds a block response.
 #[must_use]
 pub fn build_block_response(rule: Option<&str>, host: &str) -> String {
+    build_effective_block_response(rule, None, host)
+}
+
+fn build_effective_block_response(rule: Option<&str>, reason: Option<&str>, host: &str) -> String {
     let detail = match rule {
         Some(rule) => format!("Blocked by NullAD rule: {rule}"),
-        None => "Blocked by NullAD".to_owned(),
+        None => reason.map_or_else(
+            || "Blocked by NullAD".to_owned(),
+            |reason| format!("Blocked by NullAD detection: {reason}"),
+        ),
     };
+    let escape = |value: &str| {
+        value
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('\'', "&#39;")
+    };
+    let safe_host = escape(host);
+    let detail = escape(&detail);
+    let header_host: String = host
+        .chars()
+        .filter(|character| !character.is_control())
+        .collect();
     let body = format!(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>Blocked</title></head>\
          <body style=\"font-family:system-ui;margin:4rem auto;max-width:40rem\">\
-         <h1>Blocked by NullAD</h1><p>{host}</p><pre>{detail}</pre></body></html>"
+         <h1>Blocked by NullAD</h1><p>{safe_host}</p><pre>{detail}</pre></body></html>"
     );
 
     format!(
@@ -316,7 +431,7 @@ pub fn build_block_response(rule: Option<&str>, host: &str) -> String {
          Content-Type: text/html; charset=utf-8\r\n\
          Content-Length: {}\r\n\
          X-NullAD-Blocked: 1\r\n\
-         X-NullAD-Host: {host}\r\n\
+         X-NullAD-Host: {header_host}\r\n\
          Connection: close\r\n\
          \r\n{body}",
         body.len()
@@ -351,6 +466,18 @@ impl ProxyServer {
     pub async fn bind(mut config: ProxyConfig, handle: EngineHandle) -> std::io::Result<Self> {
         let listener = TcpListener::bind(config.listen).await?;
         let address = listener.local_addr()?;
+        if let Some(upstream) = &config.upstream {
+            let (host, port) = upstream.endpoint();
+            if port == address.port()
+                && (host.parse().is_ok_and(is_local_address)
+                    || matches!(host, "localhost" | "localhost.localdomain"))
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "upstream proxy points back to NullAD",
+                ));
+            }
+        }
         config.listen = address;
         Ok(Self {
             listener: Mutex::new(Some(listener)),
@@ -454,13 +581,17 @@ impl ProxyServer {
         let decision = self.handle.decide_result(
             &target_url,
             request.resource_type(),
-            None,
-            DecisionSource::Proxy,
+            request.page_for_filtering(),
+            if request.is_connect() {
+                DecisionSource::Connect
+            } else {
+                DecisionSource::Proxy
+            },
         );
 
         if decision.blocked {
             let rule = decision.matched_rule.as_ref().map(|rule| rule.raw.as_str());
-            let response = build_block_response(rule, &host);
+            let response = build_effective_block_response(rule, decision.reason.as_deref(), &host);
             client.write_all(response.as_bytes()).await?;
             client.flush().await?;
             return Ok(());
@@ -476,37 +607,54 @@ impl ProxyServer {
             return Ok(());
         };
 
-        let upstream =
-            match tokio::time::timeout(self.config.connect_timeout, TcpStream::connect(&authority))
-                .await
-            {
-                Ok(Ok(stream)) => stream,
-                Ok(Err(err)) => {
-                    let response = build_error_response(
-                        502,
-                        "Bad Gateway",
-                        &format!("Could not connect to {authority}: {err}"),
-                    );
-                    client.write_all(response.as_bytes()).await?;
-                    return Ok(());
-                }
-                Err(_) => {
-                    let response = build_error_response(
-                        504,
-                        "Gateway Timeout",
-                        &format!("Timed out connecting to {authority}."),
-                    );
-                    client.write_all(response.as_bytes()).await?;
-                    return Ok(());
-                }
-            };
-        let _ = upstream.set_nodelay(true);
-
+        // No direct fallback: silently bypassing a failed existing proxy would
+        // break its routing/privacy guarantees. Timeout includes negotiation.
+        let upstream = match tokio::time::timeout(
+            self.config.connect_timeout,
+            self.connect_upstream(&authority, request.is_connect()),
+        )
+        .await
+        {
+            Ok(Ok(stream)) => stream,
+            Ok(Err(err)) => {
+                let response = build_error_response(
+                    502,
+                    "Bad Gateway",
+                    &format!("Could not connect to {authority}: {err}"),
+                );
+                client.write_all(response.as_bytes()).await?;
+                return Ok(());
+            }
+            Err(_) => {
+                let response = build_error_response(
+                    504,
+                    "Gateway Timeout",
+                    &format!("Timed out connecting to {authority}."),
+                );
+                client.write_all(response.as_bytes()).await?;
+                return Ok(());
+            }
+        };
         let client = PrefixedIo::new(prefix, client);
         if request.is_connect() {
             self.tunnel(client, upstream).await
         } else {
             self.forward(client, upstream, &request, &authority).await
+        }
+    }
+
+    async fn connect_upstream(
+        &self,
+        authority: &str,
+        tunnel: bool,
+    ) -> std::io::Result<PrefixedIo<TcpStream>> {
+        match &self.config.upstream {
+            Some(proxy) => proxy.connect(authority, tunnel, self.config.listen).await,
+            None => {
+                let stream = TcpStream::connect(authority).await?;
+                let _ = stream.set_nodelay(true);
+                Ok(PrefixedIo::new(Vec::new(), stream))
+            }
         }
     }
 
@@ -568,7 +716,7 @@ impl ProxyServer {
     async fn tunnel(
         &self,
         mut client: PrefixedIo<TcpStream>,
-        mut upstream: TcpStream,
+        mut upstream: PrefixedIo<TcpStream>,
     ) -> std::io::Result<()> {
         client
             .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
@@ -582,11 +730,30 @@ impl ProxyServer {
     async fn forward(
         &self,
         mut client: PrefixedIo<TcpStream>,
-        mut upstream: TcpStream,
+        mut upstream: PrefixedIo<TcpStream>,
         request: &ProxyRequest,
         authority: &str,
     ) -> std::io::Result<()> {
-        let head = build_upstream_head(request, authority);
+        let head = if self
+            .config
+            .upstream
+            .as_ref()
+            .is_some_and(UpstreamProxy::uses_absolute_form)
+        {
+            let origin_head = build_upstream_head(request, authority);
+            let (_, headers) = origin_head
+                .split_once("\r\n")
+                .expect("generated request head");
+            let target = if request.method.eq_ignore_ascii_case("OPTIONS") && request.target == "*"
+            {
+                format!("http://{authority}")
+            } else {
+                request.url_for_filtering()
+            };
+            format!("{} {} HTTP/1.1\r\n{headers}", request.method, target)
+        } else {
+            build_upstream_head(request, authority)
+        };
         upstream.write_all(head.as_bytes()).await?;
         upstream.flush().await?;
 
@@ -608,7 +775,7 @@ impl ProxyServer {
         if port != self.config.listen.port() {
             return false;
         }
-        match host.parse::<std::net::IpAddr>() {
+        match host.trim_matches(['[', ']']).parse::<std::net::IpAddr>() {
             Ok(ip) => is_local_address(ip),
             Err(_) => matches!(host, "localhost" | "localhost.localdomain"),
         }
@@ -624,6 +791,32 @@ mod tests {
             Ok(Some(request)) => request,
             other => panic!("expected a complete request, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn server_options_preserves_asterisk_and_host() {
+        let origin = parse("OPTIONS * HTTP/1.1\r\nHost: example.com:8081\r\n\r\n");
+        assert_eq!(origin.url_for_filtering(), "http://example.com:8081/");
+        assert_eq!(
+            upstream_authority(&origin).as_deref(),
+            Some("example.com:8081")
+        );
+        assert!(
+            build_upstream_head(&origin, "example.com:8081").starts_with("OPTIONS * HTTP/1.1\r\n")
+        );
+        let absolute = parse("OPTIONS http://example.com:8081 HTTP/1.1\r\n\r\n");
+        assert!(build_upstream_head(&absolute, "example.com:8081")
+            .starts_with("OPTIONS * HTTP/1.1\r\n"));
+    }
+
+    #[test]
+    fn heuristic_block_page_does_not_claim_a_rule_match() {
+        let response =
+            build_effective_block_response(None, Some("heuristic_ad_host"), "adserver.example");
+        assert!(response.contains("NullAD detection: heuristic_ad_host"));
+        assert!(!response.contains("NullAD rule:"));
+        let rule_response = build_block_response(Some("path<script>"), "example.com");
+        assert!(rule_response.contains("path&lt;script&gt;"));
     }
 
     #[test]
@@ -753,13 +946,67 @@ mod tests {
         assert_eq!(request.resource_type(), ResourceType::Document);
 
         let request = parse("GET http://a.com/x.js HTTP/1.1\r\nAccept: */*\r\n\r\n");
-        assert_eq!(request.resource_type(), ResourceType::Other);
+        assert_eq!(request.resource_type(), ResourceType::Script);
 
         let request = parse("POST http://a.com/api HTTP/1.1\r\n\r\n");
         assert_eq!(request.resource_type(), ResourceType::Xhr);
 
         let request = parse("CONNECT a.com:443 HTTP/1.1\r\n\r\n");
         assert_eq!(request.resource_type(), ResourceType::Document);
+    }
+
+    #[test]
+    fn browser_destination_metadata_precedes_url_and_mime_hints() {
+        for (destination, resource) in [
+            ("document", ResourceType::Document),
+            ("iframe", ResourceType::Subdocument),
+            ("script", ResourceType::Script),
+            ("image", ResourceType::Image),
+            ("style", ResourceType::Stylesheet),
+            ("font", ResourceType::Font),
+            ("video", ResourceType::Media),
+            ("object", ResourceType::Object),
+            ("empty", ResourceType::Xhr),
+        ] {
+            let request = parse(&format!("GET http://a.com/x.js HTTP/1.1\r\nSec-Fetch-Dest: {destination}\r\nAccept: text/html\r\n\r\n"));
+            assert_eq!(request.resource_type(), resource, "{destination}");
+        }
+        let request = parse("GET http://a.com/x.js HTTP/1.1\r\nSec-Fetch-Mode: navigate\r\n\r\n");
+        assert_eq!(request.resource_type(), ResourceType::Document);
+        let request = parse("GET http://a.com/x HTTP/1.1\r\nSec-Fetch-Dest: empty\r\nSec-Fetch-Mode: websocket\r\n\r\n");
+        assert_eq!(request.resource_type(), ResourceType::Websocket);
+        let request =
+            parse("GET http://a.com/PIC.PNG?x=1 HTTP/1.1\r\nSec-Fetch-Dest: future-value\r\n\r\n");
+        assert_eq!(request.resource_type(), ResourceType::Image);
+        let request = parse("GET http://a.com/x HTTP/1.1\r\nAccept: */*\r\n\r\n");
+        assert_eq!(request.resource_type(), ResourceType::Other);
+    }
+
+    #[test]
+    fn initiating_context_requires_a_valid_referer_or_non_opaque_origin() {
+        let request = parse("GET http://a.com/x HTTP/1.1\r\nReferer: https://publisher.example/page\r\nOrigin: https://other.example\r\n\r\n");
+        assert_eq!(
+            request.page_for_filtering(),
+            Some("https://publisher.example/page")
+        );
+        let request = parse("GET http://a.com/x HTTP/1.1\r\nReferer: malformed\r\nOrigin: https://publisher.example\r\n\r\n");
+        assert_eq!(
+            request.page_for_filtering(),
+            Some("https://publisher.example")
+        );
+        for headers in [
+            "",
+            "Origin: null\r\n",
+            "Referer: https:///\r\n",
+            "Referer: https://a.com/has space\r\n",
+            "Sec-Fetch-Site: cross-site\r\n",
+        ] {
+            let request = parse(&format!("GET http://a.com/x HTTP/1.1\r\n{headers}\r\n"));
+            assert_eq!(request.page_for_filtering(), None, "{headers}");
+        }
+        let request =
+            parse("CONNECT a.com:443 HTTP/1.1\r\nReferer: https://publisher.example\r\n\r\n");
+        assert_eq!(request.page_for_filtering(), None);
     }
 
     #[test]

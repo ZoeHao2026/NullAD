@@ -6,7 +6,40 @@ NullAD is a Rust ad and tracker blocker with a desktop interface and a headless 
 It filters plaintext HTTP requests, TLS connections by hostname, and DNS queries.
 Its matching engine contains no network, filesystem, or platform integration code.
 
-## Current validation
+## Local detection and proxy coexistence
+
+The independent Chrome/Edge extension blocks HTTP/HTTPS resources and performs
+reversible local page cleanup without a domain subscription or desktop service.
+Extract `nullad-browser-extension.zip`, load it unpacked, then explicitly grant
+web resource access from the popup. It starts disabled and changes no proxy,
+DNS, certificates or request headers. The native listener can explicitly chain
+to an unauthenticated HTTP/SOCKS5 endpoint with `--upstream-proxy`; upstream
+failure never falls back to direct routing. Existing system proxy takeover needs
+an explicit upstream; use the independent extension to preserve PAC behavior.
+
+With no lists, the test site's four cosmetic/script checks pass: Off → Balanced
+→ Off produced **16 → 30 → 16 /132**. A separate run combining the unchanged 232
+bundled rules and the existing HTTP proxy produced **60/132**. Totals include
+independent network failures. **Not every ad is blocked, and not every proxy
+product/version is verified.** Edge direct/HTTP/SOCKS5 fixtures pass; production
+optional permission-dialog interaction and Chrome runtime remain Unknown.
+See [usage and limits](docs/no-subscription.md), [new acceptance](docs/heuristic-validation.md)
+and [measured cost](docs/performance.md).
+
+```powershell
+node --test extension/tests/*.test.cjs
+.\target\release\nullad-cli.exe check http://ads.vendor.example/ad-loader.js --no-lists --heuristic balanced --type script
+.\target\release\nullad-cli.exe serve --no-lists --upstream-proxy http://127.0.0.1:7890
+```
+
+The endpoint is an example; use your proxy software's actual port. Desktop/CLI
+default to Balanced local detection, which can be disabled. Bundled semantic
+conditions do not guarantee universal recognition; maintained lists remain useful.
+
+## Historical Windows acceptance (before local detection)
+
+This table records runtime source 5ac216b and documentation head 422eb53. New
+checks/packages are recorded separately in the acceptance linked above.
 
 | Area | Result and evidence |
 |---|---|
@@ -92,7 +125,8 @@ The CLI finds default lists in `./lists`, then beside the executable. Use
 `--list <PATH>` to select a specific list; the option is repeatable. A portable
 CLI archive and an NSIS installer are separate artifacts and require separate
 startup checks. `scripts/package-windows.ps1` produces desktop/CLI portable ZIPs,
-the NSIS installer and SHA256SUMS.txt after both release builds complete.
+the independent browser extension ZIP, NSIS installer and SHA256SUMS.txt after
+both release builds complete. Extension loading is a separate browser operation.
 
 ## Use
 
@@ -162,7 +196,9 @@ entries. Resource-type, third-party, domain, match-case and important options
 are handled by the engine. Exceptions normally override blocking rules;
 an important blocking rule overrides a non-important exception.
 
-Cosmetic rules are recognized and counted but do not hide page elements.
+The native engine recognizes/counts cosmetic list rules but does not apply them.
+The independent extension hides elements using local semantic detection; it
+does not import ABP cosmetic subscriptions.
 The `$csp`, `$redirect` and `$removeparam` payloads are retained by the parser
 but are not applied by the interceptors.
 
@@ -204,10 +240,14 @@ configuration** at present:
   directives; managed symlinks are refused. NetworkManager/systemd-resolved
   integration is not implemented.
 
-Mobile binaries, HTTPS URL inspection and page element hiding are outside the
-current implementation.
+Mobile binaries and native HTTPS decryption are outside the current scope.
+Browser resource blocking and page cleanup are provided by the independent
+extension within the documented limits.
 
-## Tests and performance
+## Tests and historical performance
+
+New default local-detection cost is separately measured in [performance.md](docs/performance.md).
+The baseline comparison below predates those additional features.
 
 Normal tests use mock system adapters, isolated files and local traffic
 fixtures. Tests that write live proxy settings are ignored unless explicitly

@@ -3,7 +3,21 @@
 This document distinguishes verified behavior from remaining acceptance work.
 It contains no personal machine paths, account identifiers or adapter GUIDs.
 
-## Recorded result
+## New local detection follow-up
+
+The 2026-10-05 implementation adds local detection, independent browser cleanup
+and explicit HTTP/SOCKS5 chaining. [New acceptance](heuristic-validation.md)
+separates actual Edge behavior and site results from unverified optional
+permission UI and universal proxy compatibility. [Cost measurements](performance.md)
+record the new default path separately from the historical baseline below.
+New Windows CI also includes 38 extension tests.
+Final local engineering checks: 273 workspace tests passed (0 failed, 3 ignored),
+core 34/host 35; 14 UI tests and 38 extension tests. Fmt, strict Clippy and final
+release build pass. New native Tauri four-page/settings/real zero-list traffic
+and no-tray close pass separately; native DPI/tray and extension permission
+grant are still Unknown. The final remote run is linked in the PR checks.
+
+## Historical recorded result (5ac216b / documentation 422eb53)
 
 | Check | Result | Evidence and limit |
 |---|---|---|

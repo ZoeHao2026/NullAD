@@ -1,0 +1,12 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>NullAD local DOM fixtures</title><style>body{font:16px system-ui;margin:20px}section{margin:12px 0;padding:10px;border:1px solid #ddd}.box{width:300px;height:250px}.empty-ad{width:300px;height:60px}.control{width:300px;height:90px}img{width:100px;height:50px}</style></head><body>
+<h1>DOM 识别正负样例</h1><p>页面由测试者加载，不是生产扩展 UI。正样例可隐藏，负样例和这些说明必须保留。</p>
+<div id="positive-labelled" class="box ad-slot" aria-label="广告"><span>广告</span><a href="#positive-labelled"><img alt="test creative" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='50'%3E%3Crect width='100' height='50' fill='gray'/%3E%3C/svg%3E"></a></div>
+<div id="positive-empty" class="empty-ad textads adsbox banner_ads">&nbsp;</div>
+<div id="negative-single" class="box adbox">Normal box with one ambiguous class must remain.</div>
+<div id="negative-substring" class="control header adapter adobe admin download">Normal identifier substrings must remain.</div>
+<div id="negative-shape" class="box"><a href="#negative-shape">Normal product card</a></div>
+<form id="negative-form" class="ad-slot"><span>广告</span><input aria-label="正常输入" value="Keep this form"></form>
+<article id="negative-article">This article explains advertising and sponsored content. It is ordinary editorial content.</article>
+<button id="insert">动态插入广告容器</button><button id="recycle">将动态容器改为正常正文</button>
+<script>document.getElementById('insert').onclick=()=>{const item=document.createElement('div');item.id='dynamic';item.className='box ad-slot';item.setAttribute('aria-label','Advertisement');item.innerHTML='<span>Advertisement</span><a href="#">Creative</a>';document.body.appendChild(item)};document.getElementById('recycle').onclick=()=>{const item=document.getElementById('dynamic');if(item){item.className='box';item.removeAttribute('aria-label');item.textContent='Normal recycled content'}};</script>
+</body></html>

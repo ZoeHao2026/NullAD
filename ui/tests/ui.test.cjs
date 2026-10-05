@@ -48,12 +48,12 @@ function fixture(options = {}) {
   }
   const elements = {};
   const get = (id) => elements[id] || (elements[id]=new Element(id));
-  const fieldIds = { proxy_enabled:"set-proxy-enabled", proxy_port:"set-proxy-port", dns_enabled:"set-dns-enabled", dns_port:"set-dns-port", dns_upstream:"set-dns-upstream", dns_nxdomain:"set-dns-nxdomain", intercept_system_proxy:"set-system-proxy" };
+  const fieldIds = { proxy_enabled:"set-proxy-enabled", proxy_port:"set-proxy-port", dns_enabled:"set-dns-enabled", dns_port:"set-dns-port", dns_upstream:"set-dns-upstream", dns_nxdomain:"set-dns-nxdomain", intercept_system_proxy:"set-system-proxy", heuristic_mode:"set-heuristic-mode", allowed_hosts:"set-allowed-hosts", upstream_proxy:"set-upstream-proxy" };
   ["proxy_enabled","dns_enabled","dns_nxdomain","intercept_system_proxy"].forEach((key) => get(fieldIds[key]).type="checkbox");
   get("settings-form").querySelectorAll = () => Object.values(fieldIds).map(get);
-  const saved = { proxy_enabled:true, proxy_port:8080, dns_enabled:false, dns_port:5353, dns_upstream:"8.8.8.8:53", dns_nxdomain:false, intercept_system_proxy:false, ui_language:"zh-CN", lists:[{ id:4, enabled:true }] };
+  const saved = { proxy_enabled:true, proxy_port:8080, dns_enabled:false, dns_port:5353, dns_upstream:"8.8.8.8:53", dns_nxdomain:false, intercept_system_proxy:false, heuristic_mode:"balanced", allowed_hosts:[], upstream_proxy:null, ui_language:"zh-CN", lists:[{ id:4, enabled:true }] };
   const calls=[], toasts=[], notices=[], renders=[], intervals=[];
-  const fillSettings = (settings) => { for (const key of helpers.fields) { const el=get(fieldIds[key]); if (el.type==="checkbox") el.checked=settings[key]; else el.value=String(settings[key]); } };
+  const fillSettings = (settings) => { for (const key of helpers.fields) { const el=get(fieldIds[key]); if (el.type==="checkbox") el.checked=settings[key]; else el.value=key==="allowed_hosts" ? (settings[key] || []).join("\n") : String(settings[key] || (key==="heuristic_mode" ? "balanced" : "")); } };
   const statuses = { protection:"running", proxy_port:8080, dns_port:null, pending_changes:0, rule_set:{ rules:232 } };
   const noop=()=>{};
   const views = { $:get, set:(id,value) => get(id).textContent=value, count:String, toast:(msg,kind) => toasts.push({msg,kind}), notice:(id,msg) => notices.push({id,msg}), hint:(id,msg,kind) => { get(id).textContent=msg; get(id).kind=kind; }, renderStatus:noop, renderDecisions:(data) => renders.push(data), renderPending:noop, renderPlatform:noop, renderBenchmark:noop, renderCheck:noop, renderLists:noop, renderRules:noop, fillSettings };
@@ -142,4 +142,49 @@ test("all static text keys have both translations", () => {
     assert.equal(window.NullAD.i18n.text[key].length,2,key);
     assert.ok(window.NullAD.i18n.text[key][0] && window.NullAD.i18n.text[key][1],key);
   }
+});
+test("detection settings preserve types, canonicalize domains, and clear upstream explicitly", () => {
+  const saved = { proxy_enabled:true, proxy_port:8080, dns_enabled:false, dns_port:5353, dns_upstream:"8.8.8.8:53", dns_nxdomain:false, intercept_system_proxy:false, heuristic_mode:"balanced", allowed_hosts:["example.com"], upstream_proxy:null };
+  const patch = helpers.listenerPatch({ ...saved, allowed_hosts:"EXAMPLE.com.\nexample.com", upstream_proxy:"" });
+  assert.deepEqual(patch.allowed_hosts, ["example.com"]);
+  assert.equal(helpers.changed(saved, patch), false);
+  assert.deepEqual(helpers.settingsDelta(saved, patch), {});
+  const changed = { ...patch, heuristic_mode:"off", allowed_hosts:[], upstream_proxy:"socks5://127.0.0.1:7890" };
+  assert.deepEqual(Object.keys(helpers.settingsDelta(saved, changed)), ["heuristic_mode","allowed_hosts","upstream_proxy"]);
+  assert.equal(helpers.validate(changed), null);
+  assert.deepEqual(helpers.settingsDelta({ ...saved, upstream_proxy:"http://127.0.0.1:80" }, patch), { upstream_proxy:"" });
+  for (const host of ["https://example.com","*.example.com","example.com:80","bad domain"]) assert.equal(helpers.validate({ ...patch, allowed_hosts:[host] }), "invalidAllowedHosts");
+  for (const upstream of ["http://user:pass@localhost:80","https://localhost:80","http://localhost","socks5://localhost:0","http://localhost:80/path"]) assert.equal(helpers.validate({ ...patch, upstream_proxy:upstream }), "invalidProxyUpstream");
+  assert.equal(helpers.validate({ ...patch, allowed_hosts:helpers.hostValues("例え.jp\n::1") }), null);
+});
+test("explicit detection save retains draft after failure and persists only requested policy fields", async () => {
+  const f=fixture({failCommand:"update_settings"}); await flush(); await flush();
+  f.get("set-heuristic-mode").value="off";
+  f.get("set-allowed-hosts").value="VENDOR.example.";
+  await f.get("settings-form").fire("submit");
+  const call=f.calls.find((item) => item.command==="update_settings");
+  assert.equal(call.args.patch.heuristic_mode,"off");
+  assert.deepEqual(Array.from(call.args.patch.allowed_hosts), ["vendor.example"]);
+  assert.deepEqual(Object.keys(call.args.patch), ["heuristic_mode","allowed_hosts"]);
+  assert.equal(f.saved.heuristic_mode,"balanced");
+  assert.equal(f.get("set-allowed-hosts").value,"VENDOR.example.");
+  assert.equal(f.get("settings-status").kind,"error");
+  await f.get("cancel-settings").fire("click");
+  assert.equal(f.get("set-heuristic-mode").value,"balanced");
+  assert.equal(f.get("set-allowed-hosts").value,"");
+});
+test("decision renderers explain heuristics, overrides and sources without HTML injection", () => {
+  const elements={};
+  const get=(id) => elements[id] || (elements[id]={ innerHTML:"", textContent:"", querySelectorAll:() => [] });
+  const window={NullAD:{state:helpers, i18n:{ t:(key,values) => key + (values ? JSON.stringify(values) : ""), language:"en" }}};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,"../views.js"),"utf8"),{window,document:{getElementById:get},Date,setTimeout});
+  const views=window.NullAD.views;
+  views.renderDecisions([{timestamp_ms:1,host:"ads.example",url:"https://ads.example",blocked:true,reason:"heuristic_ad_request",score:95,source:"proxy",rule:"<img onerror='bad'>"}],"all",{});
+  assert.match(get("log-feed").innerHTML,/reasonAdRequest/);
+  assert.match(get("log-feed").innerHTML,/featureScore/);
+  assert.match(get("log-feed").innerHTML,/decisionSource/);
+  assert.match(get("log-feed").innerHTML,/&lt;img/);
+  assert.doesNotMatch(get("log-feed").innerHTML,/<img onerror/);
+  views.renderCheck({host:"example",matched:0,blocked:false,reason:"allow_host"});
+  assert.match(get("check-result").innerHTML,/reasonAllowHost/);
 });

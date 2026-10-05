@@ -16,6 +16,11 @@ name = "nullad-perf"
 path = "src/performance.rs"
 required-features = ["performance"]
 
+[[bin]]
+name = "nullad-heuristic-perf"
+path = "src/heuristic_performance.rs"
+required-features = ["performance"]
+
 [features]
 performance = []
 # Allocation instrumentation is absent from normal application builds.

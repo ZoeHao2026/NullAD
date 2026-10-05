@@ -15,7 +15,8 @@ foreach ($value in @($productName, $version)) {
 $installerName = "${productName}_${version}_x64-setup.exe"
 $installer = Join-Path $repository "target/release/bundle/nsis/$installerName"
 $kinds = @("desktop", "cli")
-$outputNames = @("nullad-desktop-windows-x64.zip", "nullad-cli-windows-x64.zip", $installerName, "SHA256SUMS.txt")
+$extensionFiles = @("manifest.json", "background.js", "policy.js", "detector.js", "content.js", "i18n.js", "popup.html", "popup.js", "popup.css", "options.html", "options.js", "README.md")
+$outputNames = @("nullad-desktop-windows-x64.zip", "nullad-cli-windows-x64.zip", "nullad-browser-extension.zip", $installerName, "SHA256SUMS.txt")
 
 # Validate every input and output before creating a staging or delivery directory.
 $issues = @()
@@ -31,6 +32,7 @@ $requiredFiles = @(
     (Join-Path $repository "README.zh-CN.md"),
     (Join-Path $repository "LICENSE")
 )
+$requiredFiles += $extensionFiles | ForEach-Object { Join-Path $repository "extension/$_" }
 foreach ($path in $requiredFiles) {
     if (!(Test-Path -LiteralPath $path -PathType Leaf)) {
         $issues += "Missing required package input: $path"
@@ -73,6 +75,13 @@ try {
         }
         Compress-Archive -Path (Join-Path $package "*") -DestinationPath (Join-Path $ready "nullad-$kind-windows-x64.zip") -CompressionLevel Optimal
     }
+    $extension = Join-Path $stage "extension"
+    New-Item -ItemType Directory -Path $extension | Out-Null
+    foreach ($name in $extensionFiles) {
+        Copy-Item -LiteralPath (Join-Path $repository "extension/$name") -Destination $extension
+    }
+    Copy-Item -LiteralPath (Join-Path $repository "LICENSE") -Destination $extension
+    Compress-Archive -Path (Join-Path $extension "*") -DestinationPath (Join-Path $ready "nullad-browser-extension.zip") -CompressionLevel Optimal
     Copy-Item -LiteralPath $installer -Destination (Join-Path $ready $installerName)
     $checksums = foreach ($name in $outputNames | Where-Object { $_ -ne "SHA256SUMS.txt" } | Sort-Object) {
         $hash = Get-FileHash -LiteralPath (Join-Path $ready $name) -Algorithm SHA256
@@ -80,7 +89,7 @@ try {
     }
     $checksums | Set-Content -LiteralPath (Join-Path $ready "SHA256SUMS.txt") -Encoding ascii
 
-    # Publish only after both ZIPs, the exact installer and checksums are complete.
+    # Publish only after every ZIP, the exact installer and checksums are complete.
     New-Item -ItemType Directory -Path $destination -Force | Out-Null
     foreach ($name in $outputNames) {
         $path = Join-Path $destination $name

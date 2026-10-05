@@ -51,6 +51,15 @@
   function emptyRow(columns, heading, description) {
     return '<tr><td colspan="' + columns + '" class="empty-cell"><div class="empty-state"><img src="icons/file-earmark-text.svg" alt=""><strong>' + esc(heading) + '</strong><p>' + esc(description) + "</p></div></td></tr>";
   }
+  function decisionExplanation(entry) {
+    const keys = { rule:"reasonRule", exception:"reasonException", allow_host:"reasonAllowHost", heuristic_ad_host:"reasonAdHost", heuristic_ad_request:"reasonAdRequest" };
+    const parts = [];
+    if (entry.reason) parts.push(keys[entry.reason] ? t(keys[entry.reason]) : entry.reason);
+    if (entry.score != null) parts.push(t("featureScore", { score:entry.score }));
+    if (entry.rule) parts.push(entry.rule);
+    if (entry.source) parts.push(t("decisionSource", { source:entry.source }));
+    return parts.join(" · ") || t("noMatchedRule");
+  }
   function renderDecisions(entries, filter, snapshot) {
     if (!Array.isArray(entries)) {
       $("feed").innerHTML = emptyRow(4, t("waitingBackend"), "");
@@ -62,7 +71,7 @@
     const row = (entry, log) => {
       const date = new Date(Number(entry.timestamp_ms));
       const time = Number.isNaN(date.getTime()) ? "—" : date.toLocaleTimeString(i18n.language, { hour12: false });
-      return "<tr><td>" + esc(time) + '</td><td title="' + esc(entry.url) + '">' + esc(entry.host || entry.url) + "</td>" + (log ? '<td title="' + esc(entry.url) + '">' + esc(entry.url) + "</td>" : "") + "<td>" + decisionTag(entry) + '</td><td class="rule-line" title="' + esc(entry.rule || t("noMatchedRule")) + '">' + esc(entry.rule || "—") + "</td></tr>";
+      return "<tr><td>" + esc(time) + '</td><td title="' + esc(entry.url) + '">' + esc(entry.host || entry.url) + "</td>" + (log ? '<td title="' + esc(entry.url) + '">' + esc(entry.url) + "</td>" : "") + "<td>" + decisionTag(entry) + '</td><td class="rule-line" title="' + esc(decisionExplanation(entry)) + '">' + esc(decisionExplanation(entry)) + "</td></tr>";
     };
     $("feed").innerHTML = entries.length ? entries.slice(0, 8).map((entry) => row(entry, false)).join("") : emptyRow(4, t("noRequests"), snapshot && snapshot.proxy_port ? t("noRequestsHint", { address: "127.0.0.1:" + snapshot.proxy_port }) : t("noRequestsStopped"));
     const visible = helpers.filterDecisions(entries, filter);
@@ -79,9 +88,11 @@
   }
   function fillSettings(settings) {
     for (const field of helpers.fields) {
-      const id = { proxy_enabled:"set-proxy-enabled", proxy_port:"set-proxy-port", dns_enabled:"set-dns-enabled", dns_port:"set-dns-port", dns_upstream:"set-dns-upstream", dns_nxdomain:"set-dns-nxdomain", intercept_system_proxy:"set-system-proxy" }[field];
+      const id = { proxy_enabled:"set-proxy-enabled", proxy_port:"set-proxy-port", dns_enabled:"set-dns-enabled", dns_port:"set-dns-port", dns_upstream:"set-dns-upstream", dns_nxdomain:"set-dns-nxdomain", intercept_system_proxy:"set-system-proxy", heuristic_mode:"set-heuristic-mode", allowed_hosts:"set-allowed-hosts", upstream_proxy:"set-upstream-proxy" }[field];
       const el = $(id);
-      if (el.type === "checkbox") el.checked = !!settings[field]; else el.value = settings[field];
+      if (el.type === "checkbox") el.checked = !!settings[field];
+      else if (field === "allowed_hosts") el.value = (settings[field] || []).join("\n");
+      else el.value = settings[field] || (field === "heuristic_mode" ? "balanced" : "");
     }
   }
   function renderPending(pending, busy) {
@@ -104,7 +115,7 @@
     if (!result) return;
     const target = $("check-result");
     target.className = "check-result is-result";
-    target.innerHTML = '<span class="decision is-' + (result.blocked ? "blocked" : "allowed") + '">' + esc(t(result.blocked ? "blocked" : "allowed")) + '</span><span>' + esc(t("checkSummary", { count:result.matched, host:result.host || "—" })) + '</span><span class="rule-line">' + esc(result.rule || t("noMatchedRule")) + "</span>";
+    target.innerHTML = '<span class="decision is-' + (result.blocked ? "blocked" : "allowed") + '">' + esc(t(result.blocked ? "blocked" : "allowed")) + '</span><span>' + esc(t("checkSummary", { count:result.matched, host:result.host || "—" })) + '</span><span class="rule-line">' + esc(decisionExplanation(result)) + "</span>";
   }
-  root.NullAD.views = { $, set, count, toast, translateToasts, notice, hint, renderStatus, renderDecisions, renderLists, renderRules, fillSettings, renderPending, renderPlatform, renderBenchmark, renderCheck };
+  root.NullAD.views = { decisionExplanation, $, set, count, toast, translateToasts, notice, hint, renderStatus, renderDecisions, renderLists, renderRules, fillSettings, renderPending, renderPlatform, renderBenchmark, renderCheck };
 })(window);

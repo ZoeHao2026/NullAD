@@ -1,11 +1,12 @@
 //! The `check` command: evaluate one URL and explain the decision.
 
 use anyhow::{bail, Result};
-use nullad_engine::{FilterEngine, MatchScratch, Request, ResourceType};
+use nullad_engine::{Request, ResourceType};
+use nullad_intercept::{DecisionSource, EngineHandle};
 
 /// Evaluates a URL and prints the outcome.
 pub fn run(
-    engine: &FilterEngine,
+    handle: &EngineHandle,
     url: &str,
     page: Option<&str>,
     resource_type: &str,
@@ -20,8 +21,8 @@ pub fn run(
         request = request.with_page(page);
     }
 
-    let mut scratch = MatchScratch::new();
-    let result = engine.check_with(&request, &mut scratch);
+    let result = handle.evaluate(url, kind, page, DecisionSource::Proxy);
+    let engine = &handle.engine;
 
     println!();
     println!("url         {}", request.url);
@@ -50,6 +51,13 @@ pub fn run(
         if result.blocked { "BLOCK" } else { "ALLOW" }
     );
 
+    if let Some(reason) = &result.reason {
+        println!("reason      {reason}");
+    }
+    if let Some(score) = result.score {
+        println!("score       {score}/100 (feature strength)");
+    }
+
     match &result.matched_rule {
         Some(rule) => {
             println!("by rule     {}", rule.raw);
@@ -70,7 +78,7 @@ pub fn run(
     }
 
     println!();
-    println!("engine statistics:");
+    println!("rule engine statistics:");
     let snap = engine.stats_snapshot();
     println!("  queries             {}", snap.queries);
     println!("  blocked             {}", snap.blocked);

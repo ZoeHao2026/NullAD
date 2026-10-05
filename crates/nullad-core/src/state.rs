@@ -4,13 +4,13 @@ use std::collections::VecDeque;
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use nullad_api::{LogEntry, ProtectionState, RuleSetStatsDto, StatsSnapshotDto, StatusReport};
 use nullad_engine::FilterEngine;
 use nullad_host::journal::{ChangeJournal, JournalKind, RestoreItem, RestoreReport};
 use nullad_host::{dns_config::DnsConfigurator, system_proxy::SystemProxy};
-use nullad_intercept::{Decision, DecisionSink, EngineHandle, InterceptStats};
+use nullad_intercept::{Decision, DecisionSink, DetectionPolicy, EngineHandle, InterceptStats};
 
 use crate::settings::AppSettings;
 use crate::updater::{ListLoader, LoadOutcome};
@@ -97,6 +97,9 @@ impl DecisionSink for DecisionLog {
             host: decision.host,
             blocked: decision.blocked,
             rule: decision.rule,
+            reason: decision.reason,
+            score: decision.score,
+            source: Some(decision.source.label().to_owned()),
         });
     }
 }
@@ -112,6 +115,8 @@ pub struct AppState {
     pub engine: Arc<FilterEngine>,
     /// Current configuration.
     pub settings: Mutex<AppSettings>,
+    /// Current policy shared by existing listeners and inspection commands.
+    pub policy: Arc<RwLock<DetectionPolicy>>,
     /// Recent decisions for the live feed.
     pub decisions: Arc<DecisionLog>,
     /// Interceptor counters.
@@ -191,6 +196,7 @@ impl AppState {
 
         let state = Self {
             engine,
+            policy: Arc::new(RwLock::new(settings.detection_policy())),
             settings: Mutex::new(settings),
             decisions,
             intercept_stats: Arc::new(InterceptStats::new()),
@@ -235,12 +241,17 @@ impl AppState {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut proposed = current.clone();
         modify(&mut proposed);
+        proposed.normalize()?;
         proposed.validate()?;
         if let Some(path) = &self.settings_path {
             proposed.save_at(path)?;
         } else {
             proposed.save()?;
         }
+        *self
+            .policy
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = proposed.detection_policy();
         *current = proposed;
         self.settings_revision.fetch_add(1, Ordering::AcqRel);
         Ok(())
@@ -298,6 +309,7 @@ impl AppState {
         EngineHandle {
             engine: Arc::clone(&self.engine),
             stats: Arc::clone(&self.intercept_stats),
+            policy: Arc::clone(&self.policy),
             sink: Some(Arc::clone(&self.decisions) as Arc<dyn DecisionSink>),
         }
     }
@@ -704,6 +716,7 @@ mod tests {
         let directory = crate::test_support::directory();
         AppState {
             engine: Arc::new(FilterEngine::new()),
+            policy: Arc::new(RwLock::new(settings.detection_policy())),
             settings: Mutex::new(settings),
             decisions: Arc::new(DecisionLog::new(10)),
             intercept_stats: Arc::new(InterceptStats::new()),
@@ -726,6 +739,8 @@ mod tests {
             host: host.to_owned(),
             blocked,
             rule: blocked.then(|| "||ads.example.com^".to_owned()),
+            reason: blocked.then(|| "rule".to_owned()),
+            score: None,
             source: DecisionSource::Proxy,
         }
     }
@@ -740,6 +755,9 @@ mod tests {
                 host: format!("h{i}.com"),
                 blocked: true,
                 rule: None,
+                reason: None,
+                score: None,
+                source: None,
             });
         }
 
@@ -760,6 +778,9 @@ mod tests {
             host: "h".into(),
             blocked: false,
             rule: None,
+            reason: None,
+            score: None,
+            source: None,
         });
         assert!(!log.is_empty());
         log.clear();
@@ -777,6 +798,8 @@ mod tests {
         assert_eq!(recent[0].host, "ads.example.com");
         assert!(recent[0].blocked);
         assert_eq!(recent[0].rule.as_deref(), Some("||ads.example.com^"));
+        assert_eq!(recent[0].reason.as_deref(), Some("rule"));
+        assert_eq!(recent[0].source.as_deref(), Some("proxy"));
     }
 
     #[test]
@@ -836,11 +859,60 @@ mod tests {
                 .join("settings.json"),
         );
         let before = state.settings();
+        let handle = state.engine_handle();
+        let before_policy = handle.policy.read().unwrap().clone();
         assert!(state
-            .modify_settings(|settings| settings.ui_language = "en".into())
+            .modify_settings(|settings| {
+                settings.ui_language = "en".into();
+                settings.heuristic_mode = nullad_api::HeuristicMode::Off;
+                settings.allowed_hosts = vec!["vendor.example".into()];
+            })
             .is_err());
         assert_eq!(state.settings(), before);
+        assert_eq!(*handle.policy.read().unwrap(), before_policy);
         assert_eq!(state.settings_revision.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn saved_policy_updates_existing_handles_without_restart_or_traffic() {
+        let state = test_state(AppSettings {
+            lists: Vec::new(),
+            ..AppSettings::default()
+        });
+        state.set_runtime_status(ProtectionState::Starting, None, None, false, None);
+        state.set_runtime_status(ProtectionState::Running, Some(8080), None, false, None);
+        let handle = state.engine_handle();
+        let url = "http://adserver.vendor.example/ad-loader.js";
+        let evaluate = || {
+            handle.evaluate(
+                url,
+                nullad_engine::ResourceType::Script,
+                None,
+                DecisionSource::Proxy,
+            )
+        };
+        assert!(evaluate().blocked);
+        state
+            .modify_settings(|settings| {
+                settings.allowed_hosts = vec!["VENDOR.example.".into()];
+            })
+            .unwrap();
+        let result = evaluate();
+        assert!(!result.blocked);
+        assert_eq!(result.reason.as_deref(), Some("allow_host"));
+        assert_eq!(state.settings().allowed_hosts, ["vendor.example"]);
+        assert!(!state.status().needs_restart);
+        assert_eq!(state.intercept_stats.proxy_requests(), 0);
+        assert!(state.decisions.is_empty());
+        state
+            .modify_settings(|settings| {
+                settings.allowed_hosts.clear();
+                settings.heuristic_mode = nullad_api::HeuristicMode::Off;
+            })
+            .unwrap();
+        assert!(!evaluate().blocked);
+        assert!(!state.status().needs_restart);
+        assert_eq!(state.status().proxy_port, Some(8080));
     }
 
     #[test]
